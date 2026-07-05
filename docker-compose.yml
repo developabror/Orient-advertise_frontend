@@ -1,0 +1,80 @@
+name: orient-advertise
+
+services:
+  frontend:
+    build:
+      context: .
+      target: runtime
+    # Image name resolves from .env so `docker compose push` targets Docker Hub.
+    # Set DOCKERHUB_USERNAME (and optionally IMAGE_TAG) in .env before pushing.
+    # Example: DOCKERHUB_USERNAME=acme IMAGE_TAG=1.0.0 → acme/orient-frontend:1.0.0
+    image: ${DOCKERHUB_USERNAME:-developabror}/orient-frontend:${IMAGE_TAG:-dev}
+    container_name: orient-frontend
+    # Runtime-config pattern: VITE_* values are injected at container start
+    # by docker/entrypoint.sh. Same image works across environments.
+    environment:
+      VITE_API_URL: ${VITE_API_URL}
+      VITE_WS_URL:  ${VITE_WS_URL}
+    env_file:
+      - .env
+    ports:
+      # host:container — container listens on 3000 (non-root, unprivileged).
+      - "3000:3000"
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 64M
+    # NB: rootfs is intentionally writable. The entrypoint substitutes runtime
+    # env vars into dist/assets/*.js in place at boot — that requires writes
+    # under /usr/share/nginx/html, which can't live on a read-only rootfs.
+    # nginx's own writable paths (/var/cache/nginx, /var/run, /tmp) are owned
+    # by the non-root `nginx` user (chown'd in the Dockerfile).
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Demo backend — OPT-IN. Started only when the `mock` compose profile is
+  # active (`make up-mock` or `docker compose --profile mock up`). Default
+  # `make up` does NOT start this; the SPA talks to whatever backend
+  # VITE_API_URL points at instead. State is in-memory and resets on restart.
+  #
+  # Reachable from the host browser on :8090 — 8080 is deliberately avoided
+  # since that's the conventional Spring Boot port a real backend would use.
+  mock-api:
+    profiles: ["mock"]
+    build:
+      context: ./mock-api
+    image: ${DOCKERHUB_USERNAME:-developabror}/orient-mock-api:${IMAGE_TAG:-dev}
+    container_name: orient-mock-api
+    environment:
+      PORT: "8080"
+      ALLOW_ORIGIN: "http://localhost:3000"
+    ports:
+      - "8090:8080"
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+networks:
+  frontend:
+    driver: bridge

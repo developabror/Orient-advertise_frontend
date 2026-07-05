@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orient Advertise</title>
+    <script>
+      // Resolve and apply the saved theme before first paint to avoid a flash.
+      // Mirrors src/theme/theme.ts exactly: any value not in {light,dark,system}
+      // (or a storage read that throws) normalizes to 'system' before resolving,
+      // and the storage read is isolated so a failure still allows OS-based
+      // resolution. Kept inline + dependency-free on purpose.
+      (function () {
+        var raw = null;
+        try {
+          raw = localStorage.getItem('oa-theme');
+        } catch (e) {
+          raw = null;
+        }
+        var pref = raw === 'light' || raw === 'dark' || raw === 'system' ? raw : 'system';
+        var prefersDark = !!(
+          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        );
+        var resolved = pref === 'dark' || (pref === 'system' && prefersDark) ? 'dark' : 'light';
+        try {
+          var root = document.documentElement;
+          root.setAttribute('data-theme', resolved);
+          root.style.colorScheme = resolved;
+        } catch (e) {
+          /* DOM unavailable — :root light defaults apply */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

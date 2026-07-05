@@ -1,0 +1,8 @@
+dist
+node_modules
+coverage
+.vite
+*.min.*
+package-lock.json
+.claude
+CLAUDE.md

@@ -1,0 +1,66 @@
+const en = {
+  title: 'My Content',
+  signedInAs: 'Signed in as <strong>{{user}}</strong>',
+  dateRange: 'Date range',
+  last7Days: 'Last 7 days',
+  last30Days: 'Last 30 days',
+  custom: 'Custom',
+  from: 'From',
+  to: 'To',
+  customRangeInvalid: 'Custom range invalid — start date must be on or before end date.',
+  apply: 'Apply',
+  retry: 'Retry',
+  emptyTitle: 'No content linked to your account',
+  emptyDescription:
+    'Contact your administrator to link content files to your account before play counts can appear here.',
+  totalPlays: 'Total plays',
+  viewPlayHistory: 'View play history for {{filename}}',
+  playSingular: 'play',
+  playPlural: 'plays',
+};
+
+export const dict = {
+  en,
+  ru: {
+    title: 'Мой контент',
+    signedInAs: 'Вы вошли как <strong>{{user}}</strong>',
+    dateRange: 'Диапазон дат',
+    last7Days: 'Последние 7 дней',
+    last30Days: 'Последние 30 дней',
+    custom: 'Произвольный',
+    from: 'С',
+    to: 'По',
+    customRangeInvalid:
+      'Недопустимый диапазон — дата начала должна быть не позже даты окончания.',
+    apply: 'Применить',
+    retry: 'Повторить',
+    emptyTitle: 'К вашей учётной записи не привязан контент',
+    emptyDescription:
+      'Обратитесь к администратору, чтобы привязать файлы контента к вашей учётной записи, прежде чем здесь появится статистика воспроизведений.',
+    totalPlays: 'Всего воспроизведений',
+    viewPlayHistory: 'Посмотреть историю воспроизведений для {{filename}}',
+    playSingular: 'воспроизведение',
+    playPlural: 'воспроизведений',
+  } satisfies typeof en,
+  uz: {
+    title: 'Mening kontentim',
+    signedInAs: 'Tizimga <strong>{{user}}</strong> sifatida kirgansiz',
+    dateRange: 'Sana oraligʻi',
+    last7Days: 'Soʻnggi 7 kun',
+    last30Days: 'Soʻnggi 30 kun',
+    custom: 'Maxsus',
+    from: 'Dan',
+    to: 'Gacha',
+    customRangeInvalid:
+      'Maxsus oraliq notoʻgʻri — boshlanish sanasi tugash sanasidan kech boʻlmasligi kerak.',
+    apply: 'Qoʻllash',
+    retry: 'Qayta urinish',
+    emptyTitle: 'Hisobingizga hech qanday kontent bogʻlanmagan',
+    emptyDescription:
+      'Bu yerda ijro hisoblari paydo boʻlishidan oldin kontent fayllarini hisobingizga bogʻlash uchun administratoringizga murojaat qiling.',
+    totalPlays: 'Jami ijrolar',
+    viewPlayHistory: '{{filename}} uchun ijro tarixini koʻrish',
+    playSingular: 'ijro',
+    playPlural: 'ijro',
+  } satisfies typeof en,
+};

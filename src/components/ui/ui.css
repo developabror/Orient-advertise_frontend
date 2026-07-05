@@ -1,0 +1,826 @@
+/* ============================================================
+ * Antimetal UI primitives
+ * Hard rules:
+ *   - Never #000000; foreground is #1b2540
+ *   - Never black-based shadows; use rgba(0, 39, 80, …)
+ *   - Inputs: border-radius: 0
+ *   - Buttons: border-radius: 9999px (pills)
+ *   - #d0f100 reserved for CTA fills only
+ * ============================================================ */
+
+/* ---------- Button ---------- */
+.oa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0.5rem 1.125rem;
+  font-size: 0.9375rem;
+  line-height: 1.2;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.oa-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--oa-focus-25);
+}
+.oa-btn:disabled,
+.oa-btn--loading {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.oa-btn--sm {
+  padding: 0.3125rem 0.875rem;
+  font-size: 0.8125rem;
+}
+.oa-btn--lg {
+  padding: 0.6875rem 1.5rem;
+  font-size: 1rem;
+}
+.oa-btn--primary {
+  background: var(--oa-accent);
+  color: var(--oa-on-accent);
+}
+.oa-btn--primary:hover:not(:disabled) {
+  background: var(--oa-accent-hover);
+}
+.oa-btn--cta {
+  background: var(--oa-cta);
+  color: var(--oa-on-cta);
+}
+.oa-btn--cta:hover:not(:disabled) {
+  background: var(--oa-cta-hover);
+}
+.oa-btn--secondary {
+  background: var(--oa-surface);
+  color: var(--oa-text);
+  border-color: var(--oa-accent);
+}
+.oa-btn--secondary:hover:not(:disabled) {
+  background: var(--oa-surface-muted);
+}
+.oa-btn--ghost {
+  background: transparent;
+  color: var(--oa-text);
+}
+.oa-btn--ghost:hover:not(:disabled) {
+  background: var(--oa-wash-08);
+}
+.oa-btn--danger {
+  background: var(--oa-danger-btn);
+  color: var(--oa-on-accent);
+}
+.oa-btn--danger:hover:not(:disabled) {
+  background: var(--oa-danger-btn-hover);
+}
+.oa-btn--urgent {
+  background: var(--oa-warning);
+  color: var(--oa-on-amber);
+}
+.oa-btn--urgent:hover:not(:disabled) {
+  background: var(--oa-warning-hover);
+}
+.oa-btn__spinner {
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: oa-spin 0.7s linear infinite;
+}
+
+/* ---------- Badge ---------- */
+.oa-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+.oa-badge--neutral {
+  background: var(--oa-surface-muted);
+  color: var(--oa-text-secondary);
+}
+.oa-badge--success {
+  background: var(--oa-success-bg);
+  color: var(--oa-success-text);
+}
+.oa-badge--warning {
+  background: var(--oa-warning-bg);
+  color: var(--oa-warning-text);
+}
+.oa-badge--error {
+  background: var(--oa-danger-bg);
+  color: var(--oa-danger-text);
+}
+.oa-badge--info {
+  background: var(--oa-surface-info);
+  color: var(--oa-text);
+}
+
+/* Non-interactive white "card" pill — e.g. the device list's active-playlist
+   name. Antimetal: pill radius, white surface fill, navy foreground, blue-tinted
+   shadow for depth (never a CSS border, never black, never the #d0f100 CTA). The
+   --oa-* tokens are #ffffff / #1b2540 / rgba(0,39,80,0.12) in light mode and
+   adapt for dark mode. */
+.oa-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.125rem 0.625rem;
+  border-radius: 9999px;
+  background: var(--oa-surface);
+  color: var(--oa-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  box-shadow: 0 1px 2px var(--oa-shadow-12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- StatusDot ---------- */
+.oa-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.oa-status__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  flex: 0 0 auto;
+}
+.oa-status__dot--online {
+  background: var(--oa-success);
+}
+.oa-status__dot--offline {
+  background: var(--oa-border-strong);
+}
+.oa-status__dot--no-content {
+  background: var(--oa-warning);
+}
+.oa-status__dot--unregistered {
+  background: var(--oa-text-muted-2);
+}
+.oa-status__dot--unknown {
+  background: var(--oa-text-muted);
+}
+.oa-status__dot--pulse {
+  animation: oa-pulse 1.4s ease-in-out infinite;
+}
+.oa-status__label {
+  font-size: 0.875rem;
+  color: var(--oa-text);
+}
+
+/* ---------- Spinner ---------- */
+.oa-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.oa-spinner__ring {
+  display: inline-block;
+  border: 2px solid var(--oa-border);
+  border-top-color: var(--oa-accent);
+  border-radius: 9999px;
+  animation: oa-spin 0.7s linear infinite;
+}
+.oa-spinner--sm .oa-spinner__ring {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-width: 2px;
+}
+.oa-spinner--md .oa-spinner__ring {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-width: 3px;
+}
+.oa-spinner--lg .oa-spinner__ring {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-width: 4px;
+}
+
+/* ---------- EmptyState ---------- */
+.oa-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 3rem 1.5rem;
+  gap: 0.5rem;
+}
+.oa-empty__icon {
+  font-size: 2.25rem;
+  color: var(--oa-border-strong);
+  margin-bottom: 0.5rem;
+}
+.oa-empty__title {
+  margin: 0;
+  font-size: 1.125rem;
+  color: var(--oa-text);
+}
+.oa-empty__description {
+  margin: 0;
+  color: var(--oa-text-muted);
+  max-width: 36rem;
+  font-size: 0.9375rem;
+}
+.oa-empty__action {
+  margin-top: 1rem;
+}
+
+/* ---------- Form fields (FormInput, Select, DateRangePicker) ---------- */
+.oa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.oa-field__label {
+  font-size: 0.875rem;
+  color: var(--oa-text);
+  font-weight: 500;
+}
+.oa-field__input,
+.oa-field__select {
+  /* PROJECT RULE: inputs always border-radius: 0 */
+  border-radius: 0;
+  border: 1px solid var(--oa-border-strong);
+  padding: 0.5rem 0.75rem;
+  background: var(--oa-surface);
+  color: var(--oa-text);
+  font: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+.oa-field__select {
+  padding-right: 1.75rem;
+}
+.oa-field__input:focus,
+.oa-field__select:focus {
+  outline: none;
+  border-color: var(--oa-accent);
+  box-shadow: 0 0 0 3px var(--oa-focus-15);
+}
+.oa-field__input:disabled,
+.oa-field__select:disabled {
+  background: var(--oa-surface-muted);
+  cursor: not-allowed;
+  color: var(--oa-text-muted);
+}
+.oa-field--error .oa-field__input,
+.oa-field--error .oa-field__select {
+  border-color: var(--oa-danger);
+}
+.oa-field__hint {
+  font-size: 0.8125rem;
+  color: var(--oa-text-muted);
+  margin: 0;
+}
+.oa-field__error {
+  font-size: 0.8125rem;
+  color: var(--oa-danger);
+  margin: 0;
+}
+
+.oa-search__wrap {
+  position: relative;
+  display: flex;
+}
+
+.oa-search__input {
+  width: 100%;
+  padding-right: 2.5rem;
+}
+
+/* Suppress browsers' built-in search-clear UI; we render our own. */
+.oa-search__input::-webkit-search-decoration,
+.oa-search__input::-webkit-search-cancel-button,
+.oa-search__input::-webkit-search-results-button,
+.oa-search__input::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.oa-search__indicator,
+.oa-search__clear {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.oa-search__indicator {
+  color: var(--oa-text-muted);
+  pointer-events: none;
+}
+
+.oa-search__clear {
+  background: transparent;
+  border: 0;
+  color: var(--oa-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  padding: 0;
+}
+
+.oa-search__clear:hover {
+  background: var(--oa-wash-08);
+  color: var(--oa-text);
+}
+
+.oa-search__clear:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--oa-focus-25);
+}
+
+/* SearchableSelect (combobox) */
+.oa-searchable {
+  position: relative;
+}
+
+.oa-searchable__wrap {
+  position: relative;
+}
+
+.oa-searchable__input {
+  width: 100%;
+}
+
+.oa-searchable__panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  background: var(--oa-surface);
+  border: 1px solid var(--oa-border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--oa-shadow-12);
+  z-index: 50;
+  max-height: 18rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.oa-searchable__list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  overflow-y: auto;
+  max-height: 18rem;
+}
+
+.oa-searchable__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  color: var(--oa-text);
+}
+
+.oa-searchable__option--active {
+  background: var(--oa-wash-08);
+}
+
+.oa-searchable__option[aria-selected='true'] {
+  font-weight: 600;
+}
+
+.oa-searchable__option-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9375rem;
+}
+
+.oa-searchable__option-meta {
+  flex: 0 0 auto;
+  color: var(--oa-text-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-searchable__state {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.875rem 1rem;
+  color: var(--oa-text-secondary);
+  font-size: 0.875rem;
+}
+
+.oa-searchable__state--empty {
+  color: var(--oa-text-muted);
+  font-style: italic;
+}
+
+.oa-searchable__state--error {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  background: var(--oa-danger-bg);
+  color: var(--oa-danger-text);
+  border-bottom: 1px solid var(--oa-danger-border);
+}
+
+.oa-searchable__state--error p {
+  margin: 0;
+}
+
+.oa-date-range {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.oa-date-range__label {
+  font-size: 0.875rem;
+  color: var(--oa-text);
+  font-weight: 500;
+}
+.oa-date-range__inputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.oa-date-range__sep {
+  color: var(--oa-text-muted);
+}
+
+/* ---------- Pagination ---------- */
+.oa-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  /* On narrow viewports the page-number buttons wrap to a second line instead
+     of overflowing the page (the enclosing flex wrappers don't scroll). */
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+.oa-pagination__btn {
+  min-width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--oa-surface);
+  border: 1px solid var(--oa-border-strong);
+  border-radius: 9999px;
+  color: var(--oa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0 0.625rem;
+}
+.oa-pagination__btn:hover:not(:disabled) {
+  background: var(--oa-surface-muted);
+}
+.oa-pagination__btn--active {
+  background: var(--oa-accent);
+  color: var(--oa-on-accent);
+  border-color: var(--oa-accent);
+}
+.oa-pagination__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.oa-pagination__ellipsis {
+  padding: 0 0.25rem;
+  color: var(--oa-text-muted);
+}
+
+/* ---------- Modal ---------- */
+.oa-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--oa-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 200;
+}
+.oa-modal {
+  background: var(--oa-surface);
+  color: var(--oa-text);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px var(--oa-shadow-18);
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+/* Raise above an already-open modal/drawer (both sit at z-index 200) so the
+   global error dialog is never trapped behind the dialog that triggered it. */
+.oa-modal-backdrop--top {
+  z-index: 300;
+}
+.oa-modal--sm {
+  max-width: 380px;
+}
+.oa-modal--md {
+  max-width: 540px;
+}
+.oa-modal--lg {
+  max-width: 760px;
+}
+.oa-modal[data-variant='urgent'] {
+  border: 2px solid var(--oa-warning);
+  box-shadow:
+    0 16px 40px var(--oa-shadow-18),
+    0 0 0 4px var(--oa-amber-glow);
+}
+.oa-modal[data-variant='urgent'] .oa-modal__header {
+  background: var(--oa-warning-bg);
+  border-bottom-color: var(--oa-warning);
+}
+.oa-modal[data-variant='urgent'] .oa-modal__title {
+  color: var(--oa-warning-text);
+}
+.oa-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--oa-border);
+}
+.oa-modal__title {
+  margin: 0;
+  font-size: 1.0625rem;
+  color: var(--oa-text);
+}
+.oa-modal__close {
+  background: transparent;
+  border: 0;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--oa-text-secondary);
+  line-height: 1;
+  padding: 0.125rem 0.5rem;
+}
+.oa-modal__close:hover {
+  color: var(--oa-text);
+}
+.oa-modal__body {
+  padding: 1.25rem;
+  overflow: auto;
+}
+.oa-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--oa-border);
+}
+
+/* ---------- Drawer ---------- */
+.oa-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--oa-overlay);
+  display: flex;
+  z-index: 200;
+}
+.oa-drawer {
+  background: var(--oa-surface);
+  color: var(--oa-text);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.oa-drawer--right {
+  margin-left: auto;
+  box-shadow: -12px 0 32px var(--oa-shadow-18);
+}
+.oa-drawer--left {
+  margin-right: auto;
+  box-shadow: 12px 0 32px var(--oa-shadow-18);
+}
+.oa-drawer--sm {
+  width: 320px;
+  max-width: 90vw;
+}
+.oa-drawer--md {
+  width: 480px;
+  max-width: 90vw;
+}
+.oa-drawer--lg {
+  width: 640px;
+  max-width: 90vw;
+}
+.oa-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--oa-border);
+}
+.oa-drawer__title {
+  margin: 0;
+  font-size: 1.0625rem;
+  color: var(--oa-text);
+}
+.oa-drawer__close {
+  background: transparent;
+  border: 0;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--oa-text-secondary);
+  line-height: 1;
+  padding: 0.125rem 0.5rem;
+}
+.oa-drawer__close:hover {
+  color: var(--oa-text);
+}
+.oa-drawer__body {
+  padding: 1.25rem;
+  overflow: auto;
+  flex: 1;
+}
+.oa-drawer__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--oa-border);
+}
+
+.oa-confirm__message {
+  color: var(--oa-text);
+  line-height: 1.5;
+}
+
+/* Global error dialog (ErrorDialogHost) — the backend's verbatim message shown
+   in a danger-tinted block, mirroring the inline .oa-confirm__error treatment so
+   modal and inline conflicts read identically. */
+.oa-error-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.oa-error-dialog__message {
+  margin: 0;
+  padding: 0.625rem 0.875rem;
+  background: var(--oa-danger-bg);
+  border-left: 3px solid var(--oa-danger);
+  color: var(--oa-danger-text);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  /* Backend messages are untrusted-length; wrap rather than overflow the sm modal. */
+  overflow-wrap: anywhere;
+}
+.oa-error-dialog__meta {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--oa-text-secondary);
+}
+.oa-error-dialog__ref {
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+/* Inline error inside a confirm dialog (e.g. a 409 "in use by …" message the
+   backend returns verbatim when a delete is blocked). */
+.oa-confirm__error {
+  margin: 0.625rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--oa-danger-bg);
+  border-left: 3px solid var(--oa-danger);
+  color: var(--oa-danger-text);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+/* ---------- Table ---------- */
+.oa-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--oa-border);
+  border-radius: 8px;
+  background: var(--oa-surface);
+}
+.oa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  color: var(--oa-text);
+}
+.oa-table th {
+  padding: 0.625rem 1rem;
+  background: var(--oa-surface-muted);
+  border-bottom: 1px solid var(--oa-border);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--oa-text-secondary);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.oa-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--oa-track);
+}
+.oa-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.oa-table tbody tr:hover {
+  background: var(--oa-surface-subtle);
+}
+.oa-table__row--clickable {
+  cursor: pointer;
+}
+.oa-table-state {
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  border: 1px solid var(--oa-border);
+  border-radius: 8px;
+  background: var(--oa-surface);
+}
+
+/* ---------- Animations ---------- */
+@keyframes oa-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes oa-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Volume control — range slider + numeric readout + Apply (CTA). Inputs stay
+   square per the project rule; the slider is themed via accent-color (no
+   black). */
+.oa-volume {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.oa-volume__range {
+  flex: 1 1 140px;
+  min-width: 120px;
+  accent-color: var(--oa-accent);
+  cursor: pointer;
+}
+.oa-volume__range:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.oa-volume__number {
+  width: 4.5rem;
+  /* PROJECT RULE: inputs always border-radius: 0 */
+  border-radius: 0;
+  border: 1px solid var(--oa-border-strong);
+  padding: 0.375rem 0.5rem;
+  background: var(--oa-surface);
+  color: var(--oa-text);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+.oa-volume__number:focus {
+  outline: none;
+  border-color: var(--oa-accent);
+  box-shadow: 0 0 0 3px var(--oa-focus-15);
+}
+.oa-volume__number:disabled {
+  background: var(--oa-surface-muted);
+  cursor: not-allowed;
+  color: var(--oa-text-muted);
+}
+.oa-volume__unit {
+  color: var(--oa-text-secondary);
+  font-size: 0.9375rem;
+}

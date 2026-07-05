@@ -1,0 +1,51 @@
+# VCS / IDE
+.git
+.gitignore
+.gitattributes
+.github
+.gitlab-ci.yml
+.idea
+.vscode
+.claude
+
+# Local secrets — never bake into images.
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# Build artifacts
+node_modules
+dist
+dist-ssr
+build
+out
+coverage
+.tsbuildinfo
+*.tsbuildinfo
+.vite
+.cache
+tmp
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Container infra (not needed inside the build context once COPY'd separately)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*.swo
+*.suo
+*.sln
+
+# Markdown / docs (keep README so future scripts can ship it)
+*.md
+!README.md

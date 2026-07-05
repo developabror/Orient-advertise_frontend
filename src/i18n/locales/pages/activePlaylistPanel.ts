@@ -1,0 +1,40 @@
+const en = {
+  heading: 'Active playlist',
+  noPlaylist: 'No playlist assigned.',
+  noItems: 'No items in this playlist.',
+  previous: '← Previous',
+  next: 'Next →',
+  sending: 'Sending',
+  controlError: 'Could not send playlist command.',
+  progressLabel: 'Playback progress for {{title}}',
+  progressValue: '{{elapsed}} of {{total}}',
+  jumpLabel: 'Jump to {{title}}',
+};
+
+export const dict = {
+  en,
+  ru: {
+    heading: 'Активный плейлист',
+    noPlaylist: 'Плейлист не назначен.',
+    noItems: 'В этом плейлисте нет элементов.',
+    previous: '← Назад',
+    next: 'Далее →',
+    sending: 'Отправка',
+    controlError: 'Не удалось отправить команду плейлиста.',
+    progressLabel: 'Прогресс воспроизведения для {{title}}',
+    progressValue: '{{elapsed}} из {{total}}',
+    jumpLabel: 'Перейти к {{title}}',
+  } satisfies typeof en,
+  uz: {
+    heading: 'Faol pleylist',
+    noPlaylist: 'Pleylist tayinlanmagan.',
+    noItems: 'Bu pleylistda elementlar yoʻq.',
+    previous: '← Oldingi',
+    next: 'Keyingi →',
+    sending: 'Yuborilmoqda',
+    controlError: 'Pleylist buyrugʻini yuborib boʻlmadi.',
+    progressLabel: '{{title}} uchun ijro jarayoni',
+    progressValue: '{{total}} dan {{elapsed}}',
+    jumpLabel: '{{title}} ga oʻtish',
+  } satisfies typeof en,
+};
