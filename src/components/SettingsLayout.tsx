@@ -14,7 +14,6 @@ const SUB_NAV: readonly SubNavItem[] = [
   { to: '/settings/regions', labelKey: 'settingsNav.regions' },
   { to: '/settings/facilities', labelKey: 'settingsNav.facilities' },
   { to: '/settings/groups', labelKey: 'settingsNav.deviceGroups' },
-  { to: '/settings/sync-groups', labelKey: 'settingsNav.syncGroups' },
 ];
 
 export const SettingsLayout = () => {

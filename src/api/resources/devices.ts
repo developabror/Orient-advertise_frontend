@@ -41,6 +41,11 @@ export interface DeviceListFilters {
   // Tri-state: true (has playlist) / false (no playlist) / omitted (all). 1:1
   // wire key — distinct from device-group membership filters.
   readonly hasActivePlaylist?: boolean;
+  // Sync-group membership filter: true → only devices with `sync_group_id IS
+  // NULL` (the "not yet in a sync group" pool the sync-group picker draws from).
+  // Orthogonal to the device-group `unassigned` param (`device_group_id IS
+  // NULL`): they filter different axes — never substitute one for the other.
+  readonly syncUnassigned?: boolean;
 }
 
 /**

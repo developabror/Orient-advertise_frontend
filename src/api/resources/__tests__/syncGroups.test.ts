@@ -15,6 +15,8 @@ import {
   createSyncGroup,
   deleteSyncGroup,
   getSyncGroup,
+  getSyncGroupPlayback,
+  jumpSyncGroupToIndex,
   listSyncGroups,
   removeDeviceFromSyncGroup,
   renameSyncGroup,
@@ -175,5 +177,91 @@ describe('removeDeviceFromSyncGroup', () => {
     mockDelete.mockResolvedValueOnce({ data: undefined });
     await removeDeviceFromSyncGroup(7, 101);
     expect(mockDelete).toHaveBeenCalledWith('/api/sync-groups/7/devices/101');
+  });
+});
+
+describe('getSyncGroupPlayback', () => {
+  it('GETs /api/sync-groups/{id}/playback and parses a coherent view', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: {
+        coherent: true,
+        reason: null,
+        playlistId: 5,
+        playlistName: 'Lobby loop',
+        loopDurationMs: 90000,
+        items: [
+          { index: 0, fileId: 100, title: 'Intro', durationSeconds: 30 },
+          { index: 1, fileId: 101, title: 'Promo', durationSeconds: 60 },
+        ],
+        activeJump: { index: 1, activateAt: '2026-07-11T10:30:45Z' },
+        memberCount: 4,
+      },
+    });
+
+    const view = await getSyncGroupPlayback(7);
+
+    expect(mockGet).toHaveBeenCalledWith('/api/sync-groups/7/playback');
+    expect(view.coherent).toBe(true);
+    expect(view.items).toHaveLength(2);
+    expect(view.items[1]).toEqual({ index: 1, fileId: 101, title: 'Promo', durationSeconds: 60 });
+    expect(view.activeJump).toEqual({ index: 1, activateAt: '2026-07-11T10:30:45Z' });
+    expect(view.memberCount).toBe(4);
+  });
+
+  it('parses a coherent:false view (null activeJump, items coerced to [])', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: { coherent: false, reason: 'Members resolve different playlists' },
+    });
+
+    const view = await getSyncGroupPlayback(7);
+
+    expect(view.coherent).toBe(false);
+    expect(view.reason).toBe('Members resolve different playlists');
+    expect(view.items).toEqual([]);
+    expect(view.activeJump).toBeNull();
+    expect(view.playlistId).toBeNull();
+    expect(view.loopDurationMs).toBe(0);
+  });
+
+  it('lets a load failure reject so the caller owns the error state', async () => {
+    const err = make(500, 'boom');
+    mockGet.mockRejectedValueOnce(err);
+    await expect(getSyncGroupPlayback(7)).rejects.toBe(err);
+  });
+});
+
+describe('jumpSyncGroupToIndex', () => {
+  it('POSTs { index } to /playback/jump with the toast suppressed and parses the result', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: { syncGroupId: 7, index: 3, activateAt: '2026-07-11T10:30:45Z', memberCount: 4 },
+    });
+
+    const result = await jumpSyncGroupToIndex(7, 3);
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/sync-groups/7/playback/jump',
+      { index: 3 },
+      { _suppressErrorToast: true },
+    );
+    expect(result).toEqual({
+      syncGroupId: 7,
+      index: 3,
+      activateAt: '2026-07-11T10:30:45Z',
+      memberCount: 4,
+    });
+  });
+
+  it('rejects on 400 out-of-range so the caller can read the verbatim message', async () => {
+    const err = make(400, 'index 9 is out of range for a playlist of 4');
+    mockPost.mockRejectedValueOnce(err);
+    await expect(jumpSyncGroupToIndex(7, 9)).rejects.toBe(err);
+    const surface = err as { response?: { data?: { message?: string } } };
+    expect(surface.response?.data?.message).toBe('index 9 is out of range for a playlist of 4');
+  });
+
+  it('rejects on 409 empty/incoherent group', async () => {
+    const err = make(409, 'Group is not coherent — members resolve different content');
+    mockPost.mockRejectedValueOnce(err);
+    await expect(jumpSyncGroupToIndex(7, 0)).rejects.toBe(err);
   });
 });

@@ -36,7 +36,7 @@ const en = {
   addDevicesTitle: 'Add devices',
   addWithCount: 'Add ({{count}})',
   pickerNotice:
-    'Showing the first {{count}} devices in this project without a sync group. Backend filter <code>unassigned=true</code> is pending — list may be incomplete.',
+    'Showing the first {{count}} devices in this project that are not in any sync group (filtered server-side by <code>syncUnassigned=true</code>).',
   noUnassigned: 'No devices without a sync group in this project.',
   errLoadList: 'Failed to load sync groups.',
   errLoadGroup: 'Failed to load sync group.',
@@ -47,6 +47,20 @@ const en = {
   errLoadDevices: 'Failed to load devices.',
   errAddDevices: 'Failed to add devices.',
   errRemoveDevice: 'Failed to remove device.',
+  playbackHeading: 'Playback',
+  playbackIntro:
+    'Jump every screen in this group to a chosen video. Screens switch together at the scheduled moment.',
+  playbackLoading: 'Loading playlist…',
+  playbackNotCoherent:
+    'Screens in this group are not playing the same content, so they cannot jump as a unit. {{reason}}',
+  playbackNoItems: 'This group has no playable videos right now.',
+  playbackError: 'Failed to load the group playlist.',
+  jumpAria: 'Jump all screens to “{{title}}”',
+  jumpConfirmTitle: 'Jump all screens?',
+  jumpConfirmMessage: 'All screens in this group will jump to “{{title}}”.',
+  jumpConfirmLabel: 'Jump all screens',
+  jumpQueued: 'Jumping to “{{title}}” — all screens switch at {{time}}.',
+  jumpError: 'Failed to jump the group.',
 };
 
 export const dict = {
@@ -89,7 +103,7 @@ export const dict = {
     addDevicesTitle: 'Добавить устройства',
     addWithCount: 'Добавить ({{count}})',
     pickerNotice:
-      'Показаны первые {{count}} устройств этого проекта без группы синхронизации. Серверный фильтр <code>unassigned=true</code> ещё не готов — список может быть неполным.',
+      'Показаны первые {{count}} устройств этого проекта, не входящих ни в одну группу синхронизации (фильтрация на сервере через <code>syncUnassigned=true</code>).',
     noUnassigned: 'В этом проекте нет устройств без группы синхронизации.',
     errLoadList: 'Не удалось загрузить группы синхронизации.',
     errLoadGroup: 'Не удалось загрузить группу синхронизации.',
@@ -100,6 +114,20 @@ export const dict = {
     errLoadDevices: 'Не удалось загрузить устройства.',
     errAddDevices: 'Не удалось добавить устройства.',
     errRemoveDevice: 'Не удалось удалить устройство.',
+    playbackHeading: 'Воспроизведение',
+    playbackIntro:
+      'Переключите все экраны этой группы на выбранное видео. Экраны переключатся одновременно в назначенный момент.',
+    playbackLoading: 'Загрузка плейлиста…',
+    playbackNotCoherent:
+      'Экраны этой группы воспроизводят разный контент, поэтому не могут переключаться как единое целое. {{reason}}',
+    playbackNoItems: 'В этой группе сейчас нет доступных для воспроизведения видео.',
+    playbackError: 'Не удалось загрузить плейлист группы.',
+    jumpAria: 'Переключить все экраны на «{{title}}»',
+    jumpConfirmTitle: 'Переключить все экраны?',
+    jumpConfirmMessage: 'Все экраны этой группы переключатся на «{{title}}».',
+    jumpConfirmLabel: 'Переключить все экраны',
+    jumpQueued: 'Переключение на «{{title}}» — все экраны переключатся в {{time}}.',
+    jumpError: 'Не удалось переключить группу.',
   } satisfies typeof en,
   uz: {
     heading: 'Sinxronlash guruhlari',
@@ -139,7 +167,7 @@ export const dict = {
     addDevicesTitle: 'Qurilmalar qoʻshish',
     addWithCount: 'Qoʻshish ({{count}})',
     pickerNotice:
-      'Ushbu loyihadagi sinxronlash guruhisiz dastlabki {{count}} ta qurilma koʻrsatilmoqda. Backend filtri <code>unassigned=true</code> hali tayyor emas — roʻyxat toʻliq boʻlmasligi mumkin.',
+      'Ushbu loyihadagi hech qanday sinxronlash guruhiga kirmagan dastlabki {{count}} ta qurilma koʻrsatilmoqda (server tomonda <code>syncUnassigned=true</code> orqali filtrlangan).',
     noUnassigned: 'Bu loyihada sinxronlash guruhisiz qurilmalar yoʻq.',
     errLoadList: 'Sinxronlash guruhlarini yuklab boʻlmadi.',
     errLoadGroup: 'Sinxronlash guruhini yuklab boʻlmadi.',
@@ -150,5 +178,19 @@ export const dict = {
     errLoadDevices: 'Qurilmalarni yuklab boʻlmadi.',
     errAddDevices: 'Qurilmalarni qoʻshib boʻlmadi.',
     errRemoveDevice: 'Qurilmani olib tashlab boʻlmadi.',
+    playbackHeading: 'Ijro',
+    playbackIntro:
+      'Ushbu guruhdagi barcha ekranlarni tanlangan videoga oʻtkazing. Ekranlar belgilangan vaqtda birgalikda almashadi.',
+    playbackLoading: 'Pleylist yuklanmoqda…',
+    playbackNotCoherent:
+      'Bu guruhdagi ekranlar bir xil kontentni ijro etmayapti, shuning uchun ularni yaxlit holda oʻtkazib boʻlmaydi. {{reason}}',
+    playbackNoItems: 'Bu guruhda hozircha ijro etiladigan videolar yoʻq.',
+    playbackError: 'Guruh pleylistini yuklab boʻlmadi.',
+    jumpAria: 'Barcha ekranlarni «{{title}}» ga oʻtkazish',
+    jumpConfirmTitle: 'Barcha ekranlar oʻtkazilsinmi?',
+    jumpConfirmMessage: 'Bu guruhdagi barcha ekranlar «{{title}}» ga oʻtadi.',
+    jumpConfirmLabel: 'Barcha ekranlarni oʻtkazish',
+    jumpQueued: '«{{title}}» ga oʻtkazilmoqda — barcha ekranlar {{time}} da almashadi.',
+    jumpError: 'Guruhni oʻtkazib boʻlmadi.',
   } satisfies typeof en,
 };

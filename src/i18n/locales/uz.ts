@@ -28,6 +28,7 @@ export const uz: Translation = {
     reports: 'Hisobotlar',
     playbackReport: 'Ijro hisoboti',
     devices: 'Qurilmalar',
+    syncGroups: 'Sinxronlash guruhlari',
     content: 'Kontent',
     playlists: 'Pleylistlar',
     users: 'Foydalanuvchilar',

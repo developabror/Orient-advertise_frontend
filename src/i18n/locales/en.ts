@@ -30,6 +30,7 @@ export const en = {
     reports: 'Reports',
     playbackReport: 'Playback report',
     devices: 'Devices',
+    syncGroups: 'Sync groups',
     content: 'Content',
     playlists: 'Playlists',
     users: 'Users',

@@ -56,13 +56,14 @@ export const App = () => (
         <Route element={<ProtectedRoute roles={['admin', 'operator']} />}>
           <Route path="/content" element={<ContentPage />} />
           <Route path="/playlists" element={<PlaylistsPage />} />
+          {/* Sync groups: promoted out of /settings into a top-level nav item. */}
+          <Route path="/sync-groups" element={<SyncGroupsPage />} />
           <Route path="/settings" element={<SettingsLayout />}>
             <Route index element={<Navigate to="/settings/regions" replace />} />
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="regions" element={<RegionsPage />} />
             <Route path="facilities" element={<FacilitiesPage />} />
             <Route path="groups" element={<DeviceGroupsPage />} />
-            <Route path="sync-groups" element={<SyncGroupsPage />} />
           </Route>
         </Route>
         <Route element={<ProtectedRoute roles={['admin']} />}>

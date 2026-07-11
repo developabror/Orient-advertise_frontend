@@ -13,6 +13,7 @@ export { RegionsCard } from './RegionsCard';
 export { RecentIncidentsCard } from './RecentIncidentsCard';
 export { AdvertiserDashboard } from './AdvertiserDashboard';
 export { ActivePlaylistPanel } from './ActivePlaylistPanel';
+export { SyncGroupPlaybackPanel } from './SyncGroupPlaybackPanel';
 export { ContentCard } from './ContentCard';
 export { ContentUploader } from './ContentUploader';
 export { ContentPreviewModal } from './ContentPreviewModal';

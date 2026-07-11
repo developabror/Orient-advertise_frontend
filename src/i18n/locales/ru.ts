@@ -29,6 +29,7 @@ export const ru: Translation = {
     reports: 'Отчёты',
     playbackReport: 'Отчёт о воспроизведении',
     devices: 'Устройства',
+    syncGroups: 'Группы синхронизации',
     content: 'Контент',
     playlists: 'Плейлисты',
     users: 'Пользователи',

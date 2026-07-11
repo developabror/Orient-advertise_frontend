@@ -14,6 +14,7 @@ import {
   SearchInput,
   Select,
   Spinner,
+  SyncGroupPlaybackPanel,
   Table,
 } from '@components';
 import {
@@ -299,13 +300,14 @@ export const SyncGroupsPage = () => {
   const openPicker = (): void => {
     if (drawerData === null) return;
     setPicker({ ...EMPTY_PICKER, open: true, loading: true });
-    // Backend `unassigned: true` filter not yet supported. Fall back to
-    // fetching by project and filtering `syncGroupId == null` client-side,
-    // capped at the first page. We scope by the group's **project** (not a
-    // single region): a sync group spans the project's regions, so a
-    // region-scoped query would wrongly exclude legal members elsewhere.
+    // Server-side filter `syncUnassigned=true` → devices whose `sync_group_id
+    // IS NULL`. We scope by the group's **project** (not a single region): a
+    // sync group spans the project's regions, so a region-scoped query would
+    // wrongly exclude legal members elsewhere. The client-side
+    // `syncGroupId === null` filter below is a cheap belt-and-braces in case a
+    // row slips through, capped at the first page.
     listDevices(
-      { projectId: drawerData.projectId },
+      { projectId: drawerData.projectId, syncUnassigned: true },
       { page: 0, size: PICKER_PAGE_SIZE },
     )
       .then((res) => {
@@ -621,6 +623,25 @@ export const SyncGroupsPage = () => {
                 </ul>
               )}
             </div>
+
+            {/* Group playback — jump every member to a chosen video in lockstep.
+                Hidden for empty groups (the backend has nothing coherent to
+                return, and the panel would only fetch to show a notice). */}
+            {drawerData.devices.length > 0 && (
+              <div className="oa-settings-detail__section">
+                <h3>{t('syncGroupsPage.playbackHeading')}</h3>
+                <p className="oa-muted">{t('syncGroupsPage.playbackIntro')}</p>
+                {/* Key on the member roster: adding/removing devices in this same
+                    drawer changes the group's coherence and shared order, so the
+                    panel must re-fetch. Its fetch effect only keys on groupId
+                    (unchanged here), so we remount it when the roster changes. */}
+                <SyncGroupPlaybackPanel
+                  key={drawerData.devices.map((d) => d.id).sort((a, b) => a - b).join(',')}
+                  groupId={drawerData.id}
+                  canControl={canMutate}
+                />
+              </div>
+            )}
           </div>
         )}
         {drawerData !== null && editName !== null && (

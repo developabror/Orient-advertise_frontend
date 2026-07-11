@@ -236,14 +236,19 @@ export {
   createSyncGroup,
   deleteSyncGroup,
   getSyncGroup,
+  getSyncGroupPlayback,
+  jumpSyncGroupToIndex,
   listSyncGroups,
   removeDeviceFromSyncGroup,
   renameSyncGroup,
 } from './resources/syncGroups';
 export type {
   SyncGroupDetail,
+  SyncGroupJumpResult,
   SyncGroupListFilters,
   SyncGroupMember,
+  SyncGroupPlaybackItem,
+  SyncGroupPlaybackView,
   SyncGroupSummary,
 } from './resources/syncGroups';
 export {
