@@ -43,18 +43,23 @@ class MockWebSocket {
   static instances: MockWebSocket[] = [];
   readonly url: string;
   private readonly closeListeners: Array<(ev: MockCloseEvent) => void> = [];
+  private readonly messageListeners: Array<(ev: { data: unknown }) => void> = [];
+  private readonly openListeners: Array<() => void> = [];
 
   constructor(url: string) {
     this.url = url;
     MockWebSocket.instances.push(this);
   }
 
-  addEventListener(type: string, listener: (ev: unknown) => void): void {
+  addEventListener(type: string, listener: (ev: never) => void): void {
     if (type === 'close') {
       this.closeListeners.push(listener as (ev: MockCloseEvent) => void);
+    } else if (type === 'message') {
+      this.messageListeners.push(listener as (ev: { data: unknown }) => void);
+    } else if (type === 'open') {
+      this.openListeners.push(listener as () => void);
     }
-    // 'open' / 'message' / 'error' listeners are intentionally dropped —
-    // these tests only drive the close path.
+    // 'error' listeners are intentionally dropped.
   }
   removeEventListener(): void {}
   close(): void {}
@@ -65,6 +70,16 @@ class MockWebSocket {
   simulateClose(code: number, reason = ''): void {
     const event: MockCloseEvent = { code, reason };
     for (const fn of this.closeListeners) fn(event);
+  }
+
+  simulateOpen(): void {
+    for (const fn of this.openListeners) fn();
+  }
+
+  // `data` is passed through verbatim so a test can drive both the happy
+  // path (a JSON string) and the malformed cases (non-string, unparseable).
+  simulateMessage(data: unknown): void {
+    for (const fn of this.messageListeners) fn({ data });
   }
 }
 
@@ -256,6 +271,30 @@ describe('isWsEvent — INCIDENT_UPDATED', () => {
     expect(isWsEvent({ ...validPayload(), actor: null })).toBe(true);
   });
 
+  // `RedisDashboardEventBroadcaster.incidentJson` renders these two as an
+  // explicit JSON `null` when the payload has none — exactly the pattern that
+  // made `invalidReason` drop every CONTENT_STATUS_CHANGE READY frame. A
+  // `typeof === 'string'` guard here would silently discard the incident.
+  it('accepts openedAt === null (explicit null on the wire, not an omission)', () => {
+    expect(isWsEvent({ ...validPayload(), openedAt: null })).toBe(true);
+  });
+
+  it('accepts updatedAt === null', () => {
+    expect(isWsEvent({ ...validPayload(), updatedAt: null })).toBe(true);
+  });
+
+  it('accepts openedAt, updatedAt and actor all null at once', () => {
+    expect(
+      isWsEvent({ ...validPayload(), openedAt: null, updatedAt: null, actor: null }),
+    ).toBe(true);
+  });
+
+  // Admitting null must not become admitting anything.
+  it('still rejects non-string, non-null timestamps', () => {
+    expect(isWsEvent({ ...validPayload(), openedAt: 1_749_000_000 })).toBe(false);
+    expect(isWsEvent({ ...validPayload(), updatedAt: { at: 'now' } })).toBe(false);
+  });
+
   it('accepts every valid status value', () => {
     for (const status of ['OPEN', 'ACKNOWLEDGED', 'RESOLVED']) {
       expect(isWsEvent({ ...validPayload(), status })).toBe(true);
@@ -303,6 +342,17 @@ describe('isWsEvent — INCIDENT_UPDATED', () => {
 
   it('rejects an invalid actor type (numeric)', () => {
     expect(isWsEvent({ ...validPayload(), actor: 42 })).toBe(false);
+  });
+
+  // Nullable is not the same as optional: the broadcaster always renders the
+  // key, so an *absent* one is a malformed frame even though `null` is fine.
+  it('rejects an omitted openedAt/updatedAt even though null is accepted', () => {
+    for (const field of ['openedAt', 'updatedAt', 'actor']) {
+      const p = validPayload();
+      delete p[field];
+      expect(isWsEvent(p)).toBe(false);
+      expect(isWsEvent({ ...validPayload(), [field]: null })).toBe(true);
+    }
   });
 
   it('rejects non-numeric or non-finite ids', () => {
@@ -408,6 +458,18 @@ describe('isWsEvent — DEVICE_STATUS_CHANGE', () => {
     expect(isWsEvent({ ...validPayload(), changedAt: Date.now() })).toBe(false);
     expect(isWsEvent({ ...validPayload(), changedAt: null })).toBe(false);
   });
+
+  // Sibling-guard audit: unlike the incident and content frames, the
+  // DEVICE_STATUS_CHANGE template has NO nullable field —
+  // `RedisDashboardEventBroadcaster.deviceStatusChanged` renders `deviceId`
+  // as `%d` and the other three inside quotes. Every field is therefore
+  // required-and-non-null, and an explicit null in any of them is a
+  // malformed frame, not the "explicit null" pattern seen elsewhere.
+  it('rejects an explicit null in every field (no nullable field on this frame)', () => {
+    for (const field of ['deviceId', 'oldStatus', 'newStatus', 'changedAt']) {
+      expect(isWsEvent({ ...validPayload(), [field]: null })).toBe(false);
+    }
+  });
 });
 
 describe('isWsEvent — CONTENT_STATUS_CHANGE', () => {
@@ -433,6 +495,29 @@ describe('isWsEvent — CONTENT_STATUS_CHANGE', () => {
     expect(isWsEvent({ ...valid(), status: 'TRANSCODING', progressPct: 0 })).toBe(true);
   });
 
+  // THE regression case. `RedisDashboardEventBroadcaster.contentStatusChanged`
+  // renders `invalidReason` unconditionally —
+  // `p.invalidReason() == null ? "null" : "\"…\""` — so every non-INVALID
+  // frame carries an explicit JSON null. JSON has no `undefined` and
+  // `typeof null === 'object'`, so the old
+  // `=== undefined || typeof === 'string'` guard rejected the whole frame.
+  // Only INVALID survived (markInvalid always supplies a string), which meant
+  // READY — the one transition the operator waits on — was silently dropped.
+  it('accepts invalidReason === null on a READY frame (the explicit wire null)', () => {
+    expect(isWsEvent({ ...valid(), invalidReason: null })).toBe(true);
+  });
+
+  it('accepts invalidReason === null for every status value', () => {
+    for (const status of ['TRANSCODING', 'READY', 'FAILED', 'INVALID']) {
+      expect(isWsEvent({ ...valid(), status, invalidReason: null })).toBe(true);
+    }
+  });
+
+  it('accepts progressPct === null (same explicit-null publisher style)', () => {
+    expect(isWsEvent({ ...valid(), progressPct: null })).toBe(true);
+    expect(isWsEvent({ ...valid(), invalidReason: null, progressPct: null })).toBe(true);
+  });
+
   it('rejects a non-numeric / non-finite contentId', () => {
     expect(isWsEvent({ ...valid(), contentId: '123' })).toBe(false);
     expect(isWsEvent({ ...valid(), contentId: Number.NaN })).toBe(false);
@@ -448,10 +533,17 @@ describe('isWsEvent — CONTENT_STATUS_CHANGE', () => {
     expect(isWsEvent({ ...valid(), status: null })).toBe(false);
   });
 
+  // Admitting `null` must not slide into admitting anything: these are the
+  // negative half of the widened guard.
   it('rejects malformed optional fields', () => {
     expect(isWsEvent({ ...valid(), invalidReason: 5 })).toBe(false);
+    expect(isWsEvent({ ...valid(), invalidReason: 0 })).toBe(false);
+    expect(isWsEvent({ ...valid(), invalidReason: false })).toBe(false);
+    expect(isWsEvent({ ...valid(), invalidReason: {} })).toBe(false);
+    expect(isWsEvent({ ...valid(), invalidReason: ['bad codec'] })).toBe(false);
     expect(isWsEvent({ ...valid(), progressPct: 'lots' })).toBe(false);
     expect(isWsEvent({ ...valid(), progressPct: Number.POSITIVE_INFINITY })).toBe(false);
+    expect(isWsEvent({ ...valid(), progressPct: Number.NaN })).toBe(false);
   });
 
   it('rejects payloads missing a required field', () => {
@@ -460,5 +552,144 @@ describe('isWsEvent — CONTENT_STATUS_CHANGE', () => {
       delete p[field];
       expect(isWsEvent(p)).toBe(false);
     }
+  });
+});
+
+// Delivery path, not just the validator: a frame has to survive JSON.parse,
+// isWsEvent AND handleMessage's dispatch to reach a consumer. The production
+// bug lived in the gap between "the guard is wrong" and "nothing says so" —
+// handleMessage returned early with no log and no counter, so a dead live
+// feed looked exactly like a quiet one.
+describe('wsClient — handleMessage delivery and dropped-frame accounting', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  const connectAndOpen = (): MockWebSocket => {
+    tokenStore.set('test-token');
+    wsClient.connect();
+    const socket = MockWebSocket.instances[0];
+    if (socket === undefined) throw new Error('no socket was constructed');
+    socket.simulateOpen();
+    return socket;
+  };
+
+  beforeEach(() => {
+    MockWebSocket.instances = [];
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = MockWebSocket;
+    tokenStore.set(null);
+    mockRefreshOnce.mockReset();
+    wsClient.disconnect();
+    wsClient.resetDroppedFrames();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    wsClient.disconnect();
+    wsClient.resetDroppedFrames();
+    tokenStore.set(null);
+    if (realWebSocket !== undefined) {
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = realWebSocket;
+    }
+  });
+
+  it('delivers a READY frame carrying invalidReason: null to its consumer', () => {
+    const received: unknown[] = [];
+    const unsub = wsClient.onEvent('CONTENT_STATUS_CHANGE', (e) => {
+      received.push(e);
+    });
+    const socket = connectAndOpen();
+
+    // Byte-for-byte the frame the backend broadcaster emits for a completed
+    // transcode: explicit `null` reason, plus the `at` field the FE type does
+    // not declare (extra keys are not a rejection reason).
+    socket.simulateMessage(
+      '{"type":"CONTENT_STATUS_CHANGE","contentId":41,"status":"READY",' +
+        '"invalidReason":null,"at":"2026-09-06T09:12:00Z"}',
+    );
+
+    expect(received).toEqual([
+      {
+        type: 'CONTENT_STATUS_CHANGE',
+        contentId: 41,
+        status: 'READY',
+        invalidReason: null,
+        at: '2026-09-06T09:12:00Z',
+      },
+    ]);
+    expect(wsClient.getDroppedFrames()['rejected-by-guard']).toBe(0);
+    unsub();
+  });
+
+  it('counts and warns when a frame parses but fails the guard', () => {
+    const received: unknown[] = [];
+    const unsub = wsClient.onEvent('CONTENT_STATUS_CHANGE', (e) => {
+      received.push(e);
+    });
+    const socket = connectAndOpen();
+
+    socket.simulateMessage('{"type":"CONTENT_STATUS_CHANGE","contentId":41,"status":"DONE"}');
+
+    expect(received).toHaveLength(0);
+    expect(wsClient.getDroppedFrames()['rejected-by-guard']).toBe(1);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain('rejected-by-guard');
+    unsub();
+  });
+
+  it('counts an unparseable frame separately from a rejected one', () => {
+    const socket = connectAndOpen();
+
+    socket.simulateMessage('{not json');
+
+    expect(wsClient.getDroppedFrames()).toMatchObject({
+      unparseable: 1,
+      'rejected-by-guard': 0,
+    });
+  });
+
+  it('counts a non-string payload (binary frame)', () => {
+    const socket = connectAndOpen();
+
+    socket.simulateMessage(new ArrayBuffer(4));
+
+    expect(wsClient.getDroppedFrames()['non-string']).toBe(1);
+  });
+
+  // Out of scope by design: a double-JSON-encoded frame is a backend
+  // publisher bug (it was fixed by switching to StringRedisTemplate).
+  // Unwrapping it here would hide the regression and break once the
+  // publisher is correct — so it must land in the dropped-frame count,
+  // loudly, rather than be silently repaired.
+  it('drops (and counts) a double-encoded frame instead of unwrapping it', () => {
+    const received: unknown[] = [];
+    const unsub = wsClient.onEvent('CONTENT_STATUS_CHANGE', (e) => {
+      received.push(e);
+    });
+    const socket = connectAndOpen();
+
+    const inner = '{"type":"CONTENT_STATUS_CHANGE","contentId":41,"status":"READY","invalidReason":null}';
+    socket.simulateMessage(JSON.stringify(inner));
+
+    expect(received).toHaveLength(0);
+    expect(wsClient.getDroppedFrames()['rejected-by-guard']).toBe(1);
+    unsub();
+  });
+
+  it('delivers an INCIDENT_CRITICAL frame with null openedAt/updatedAt/actor', () => {
+    const received: unknown[] = [];
+    const unsub = wsClient.onEvent('INCIDENT_CRITICAL', (e) => {
+      received.push(e);
+    });
+    const socket = connectAndOpen();
+
+    socket.simulateMessage(
+      '{"type":"INCIDENT_CRITICAL","incidentId":9,"deviceId":3,"eventType":"DEVICE_OFFLINE",' +
+        '"status":"OPEN","priority":"CRITICAL","description":"offline",' +
+        '"openedAt":null,"updatedAt":null,"actor":null}',
+    );
+
+    expect(received).toHaveLength(1);
+    expect(wsClient.getDroppedFrames()['rejected-by-guard']).toBe(0);
+    unsub();
   });
 });

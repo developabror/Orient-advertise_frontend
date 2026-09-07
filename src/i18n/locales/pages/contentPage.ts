@@ -26,6 +26,8 @@ const en = {
   deleteConfirm: 'Delete',
   deleteSuccess: 'Content deleted.',
   deleteError: 'Failed to delete content.',
+  retryStarted: 'Sent back for processing.',
+  retryError: 'Could not retry processing.',
 };
 
 export const dict = {
@@ -59,6 +61,8 @@ export const dict = {
     deleteConfirm: 'Удалить',
     deleteSuccess: 'Контент удалён.',
     deleteError: 'Не удалось удалить контент.',
+    retryStarted: 'Отправлено на повторную обработку.',
+    retryError: 'Не удалось перезапустить обработку.',
   } satisfies typeof en,
   uz: {
     title: 'Kontent kutubxonasi',
@@ -89,5 +93,7 @@ export const dict = {
     deleteConfirm: 'Oʻchirish',
     deleteSuccess: 'Kontent oʻchirildi.',
     deleteError: 'Kontentni oʻchirib boʻlmadi.',
+    retryStarted: 'Qayta ishlashga yuborildi.',
+    retryError: 'Qayta ishlashni qaytadan boshlab boʻlmadi.',
   } satisfies typeof en,
 };

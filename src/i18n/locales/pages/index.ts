@@ -21,6 +21,7 @@ import { dict as deviceDetailPage } from './deviceDetailPage';
 import { dict as deviceEventsModal } from './deviceEventsModal';
 import { dict as deviceGroupsPage } from './deviceGroupsPage';
 import { dict as devicePlaybackReportPage } from './devicePlaybackReportPage';
+import { dict as deviceRemotePage } from './deviceRemotePage';
 import { dict as devicesPage } from './devicesPage';
 import { dict as diagnosticsModal } from './diagnosticsModal';
 import { dict as errorDialogHost } from './errorDialogHost';
@@ -75,6 +76,7 @@ export const pagesEn = {
   deviceEventsModal: deviceEventsModal.en,
   deviceGroupsPage: deviceGroupsPage.en,
   devicePlaybackReportPage: devicePlaybackReportPage.en,
+  deviceRemotePage: deviceRemotePage.en,
   devicesPage: devicesPage.en,
   diagnosticsModal: diagnosticsModal.en,
   errorDialogHost: errorDialogHost.en,
@@ -130,6 +132,7 @@ export const pagesRu = {
   deviceEventsModal: deviceEventsModal.ru,
   deviceGroupsPage: deviceGroupsPage.ru,
   devicePlaybackReportPage: devicePlaybackReportPage.ru,
+  deviceRemotePage: deviceRemotePage.ru,
   devicesPage: devicesPage.ru,
   diagnosticsModal: diagnosticsModal.ru,
   errorDialogHost: errorDialogHost.ru,
@@ -185,6 +188,7 @@ export const pagesUz = {
   deviceEventsModal: deviceEventsModal.uz,
   deviceGroupsPage: deviceGroupsPage.uz,
   devicePlaybackReportPage: devicePlaybackReportPage.uz,
+  deviceRemotePage: deviceRemotePage.uz,
   devicesPage: devicesPage.uz,
   diagnosticsModal: diagnosticsModal.uz,
   errorDialogHost: errorDialogHost.uz,

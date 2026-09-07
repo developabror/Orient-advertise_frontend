@@ -36,6 +36,9 @@ const en = {
 
   // Remote actions panel
   remoteActions: 'Remote actions',
+  connectRemote: 'Connect',
+  connectRemoteUnknown: 'Device has not reported remote support',
+  connectRemoteUnsupported: 'This device reported that it does not support remote control',
   getDiagnostics: 'Get Diagnostics',
   syncContent: 'Sync content',
   moveDevice: 'Move device',
@@ -115,6 +118,9 @@ export const dict = {
     never: 'никогда',
 
     remoteActions: 'Удалённые действия',
+    connectRemote: 'Подключиться',
+    connectRemoteUnknown: 'Устройство не сообщило о поддержке удалённого управления',
+    connectRemoteUnsupported: 'Устройство сообщило, что не поддерживает удалённое управление',
     getDiagnostics: 'Получить диагностику',
     syncContent: 'Синхронизировать контент',
     moveDevice: 'Переместить устройство',
@@ -187,6 +193,9 @@ export const dict = {
     never: 'hech qachon',
 
     remoteActions: 'Masofaviy amallar',
+    connectRemote: 'Ulanish',
+    connectRemoteUnknown: 'Qurilma masofaviy boshqaruvni qoʻllab-quvvatlashi haqida xabar bermagan',
+    connectRemoteUnsupported: 'Qurilma masofaviy boshqaruvni qoʻllab-quvvatlamasligini bildirdi',
     getDiagnostics: 'Diagnostikani olish',
     syncContent: 'Kontentni sinxronlash',
     moveDevice: 'Qurilmani koʻchirish',

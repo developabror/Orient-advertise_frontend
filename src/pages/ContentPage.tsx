@@ -16,7 +16,7 @@ import {
   Spinner,
   UrgentUploadModal,
 } from '@components';
-import { isErrorResponse, softDeleteContent } from '@api';
+import { isErrorResponse, retranscodeContent, softDeleteContent } from '@api';
 import { markErrorHandled } from '@api/errorDialog';
 import { notify } from '@api/notify';
 import { useContentItems, useRole, type ContentItem, type ContentItemsQuery } from '@hooks';
@@ -89,7 +89,8 @@ export const ContentPage = () => {
     [page, status],
   );
 
-  const { items, totalPages, totalItems, isLoading, isStale, refresh } = useContentItems(query);
+  const { items, totalPages, totalItems, isLoading, isStale, refresh, patchItem } =
+    useContentItems(query);
   const [urgentOpen, setUrgentOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [schedulesContentId, setSchedulesContentId] = useState<string | null>(null);
@@ -98,8 +99,49 @@ export const ContentPage = () => {
   // Deleting content (soft-delete) is ADMIN/OPERATOR only; the API enforces it too.
   const role = useRole();
   const canDelete = role === 'admin' || role === 'operator';
+  // POST /api/content/{id}/retranscode carries the same ADMIN/OPERATOR guard.
+  // Anyone else would get a 403, so they get no button at all.
+  const canRetry = role === 'admin' || role === 'operator';
   const [deleteTarget, setDeleteTarget] = useState<ContentItem | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [retryErrors, setRetryErrors] = useState<Readonly<Record<string, string>>>({});
+
+  const requestRetry = useCallback(
+    (id: string): void => {
+      setRetryErrors((prev) => {
+        const { [id]: _dropped, ...rest } = prev;
+        return rest;
+      });
+      setRetryingId(id);
+      retranscodeContent(Number.parseInt(id, 10))
+        .then((res) => {
+          // Optimistic: move the card out of its stuck state immediately and
+          // let the WS frame / uploader poll drive it the rest of the way.
+          // The backend echoes the status it committed; fall back to
+          // TRANSCODING when it sends nothing recognisable.
+          const next = res.status ?? 'TRANSCODING';
+          patchItem(id, {
+            status: next === 'TRANSCODING' ? 'transcoding' : 'uploading',
+            stalled: false,
+            errorMessage: null,
+          });
+          notify.success(t('contentPage.retryStarted'));
+        })
+        .catch((err: unknown) => {
+          // 409 (wrong status / missing raw object) and 404 carry an
+          // operator-facing `message`. Render it on the card — claiming the
+          // error first is what stops the global modal, and suppressing
+          // without rendering would make Retry a silent no-op.
+          const message = extractMessage(err) ?? t('contentPage.retryError');
+          setRetryErrors((prev) => ({ ...prev, [id]: message }));
+        })
+        .finally(() => {
+          setRetryingId(null);
+        });
+    },
+    [patchItem, t],
+  );
 
   const requestDelete = useCallback(
     (id: string): void => {
@@ -223,7 +265,10 @@ export const ContentPage = () => {
               layout={layout}
               onSchedules={setSchedulesContentId}
               onPreview={setPreviewContentId}
+              isRetrying={retryingId === item.id}
+              retryError={retryErrors[item.id] ?? null}
               {...(canDelete ? { onDelete: requestDelete } : {})}
+              {...(canRetry ? { onRetry: requestRetry } : {})}
             />
           ))}
         </div>

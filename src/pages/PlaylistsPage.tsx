@@ -10,6 +10,7 @@ import {
 } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import {
   Button,
   type Column,
@@ -279,6 +280,16 @@ interface ContentPickerState {
   readonly loading: boolean;
   readonly content: readonly ContentFileSummary[];
   readonly error: string | null;
+  /**
+   * How many of this project's content files are still pre-`READY`
+   * (`UPLOADED` + `TRANSCODING`) and therefore absent from the list below.
+   *
+   * The picker filters server-side on `status: 'READY'`, so a file the
+   * operator uploaded moments ago simply *is not here* — with nothing on
+   * screen connecting that absence to the upload they just made. This count
+   * exists only to name the gap; the filter itself is unchanged.
+   */
+  readonly pendingCount: number;
 }
 
 const EMPTY_PICKER: ContentPickerState = {
@@ -286,6 +297,7 @@ const EMPTY_PICKER: ContentPickerState = {
   loading: false,
   content: [],
   error: null,
+  pendingCount: 0,
 };
 
 export const PlaylistsPage = () => {
@@ -555,12 +567,33 @@ export const PlaylistsPage = () => {
     // for a real, positive project id; otherwise omit it so the picker lists all
     // READY content (same conditional-spread idiom as `load` above).
     const pid = drawerData.projectId;
-    listContent(
-      { status: 'READY', ...(typeof pid === 'number' && pid > 0 ? { projectId: pid } : {}) },
+    const scope = typeof pid === 'number' && pid > 0 ? { projectId: pid } : {};
+    // Issued FIRST — this is the request that fills the picker; the probes
+    // below only annotate it.
+    const readyPage = listContent(
+      { status: 'READY', ...scope },
       { page: 0, size: CONTENT_PAGE_SIZE, sort: 'name,asc' },
-    )
-      .then((res) => {
-        setPicker({ open: true, loading: false, content: res.content, error: null });
+    );
+    // Two size-1 probes purely for their `totalElements`; they name how much
+    // content the READY filter is hiding without changing what it returns.
+    // Their failure is non-fatal — the picker still works without the hint.
+    const pendingProbe = Promise.all(
+      (['UPLOADED', 'TRANSCODING'] as const).map((status) =>
+        listContent({ status, ...scope }, { page: 0, size: 1 })
+          .then((res) => res.totalElements)
+          .catch(() => 0),
+      ),
+    ).then((counts) => counts.reduce((a, b) => a + b, 0));
+
+    Promise.all([readyPage, pendingProbe])
+      .then(([res, pendingCount]) => {
+        setPicker({
+          open: true,
+          loading: false,
+          content: res.content,
+          error: null,
+          pendingCount,
+        });
       })
       .catch((err: unknown) => {
         setPicker({
@@ -568,6 +601,7 @@ export const PlaylistsPage = () => {
           loading: false,
           content: [],
           error: extractMessage(err) ?? t('playlistsPage.errLoadContent'),
+          pendingCount: 0,
         });
       });
   };
@@ -1144,6 +1178,12 @@ export const PlaylistsPage = () => {
               : t('playlistsPage.pickerNotice', { count: CONTENT_PAGE_SIZE })}
           </p>
           <p className="oa-muted">{t('playlistsPage.imageDwellHint')}</p>
+          {!picker.loading && picker.pendingCount > 0 && (
+            <p className="oa-settings-page__notice" role="status">
+              {t('playlistsPage.pendingContentHint', { count: picker.pendingCount })}{' '}
+              <Link to="/content">{t('playlistsPage.pendingContentLink')}</Link>
+            </p>
+          )}
           {picker.loading && <p className="oa-muted">{t('playlistsPage.loading')}</p>}
           {picker.error !== null && <div className="oa-settings-page__error">{picker.error}</div>}
           {!picker.loading && picker.content.length === 0 && picker.error === null && (

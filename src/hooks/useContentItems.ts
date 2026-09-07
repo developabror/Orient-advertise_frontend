@@ -22,6 +22,18 @@ export interface ContentItem {
   readonly thumbnailUrl: string | null;
   readonly uploadedByUsername: string | null;
   readonly canManage: boolean;
+  /**
+   * The row has sat in a pre-terminal status far longer than the pipeline
+   * should take — nothing is going to finish it without intervention.
+   *
+   * **Derived from server data on every fetch**, so it survives a reload and
+   * a route change. The uploader's old 10-minute deadline lived only in
+   * component state: the message told the operator to refresh, and the
+   * refresh erased both the message and the polling that produced it.
+   */
+  readonly stalled: boolean;
+  /** Server `createdAt` — the age basis for a stalled `UPLOADED` row. */
+  readonly createdAt: string;
 }
 
 export interface ContentItemsQuery {
@@ -37,7 +49,62 @@ export interface ContentItemsState {
   readonly isLoading: boolean;
   readonly isStale: boolean;
   readonly refresh: () => void;
+  /**
+   * Apply a local patch to one already-loaded row. Used for the optimistic
+   * flip to `transcoding` after a successful retranscode, so the card moves
+   * immediately and WS/poll takes over from there. The next `refresh()`
+   * overwrites it with server truth.
+   */
+  readonly patchItem: (id: string, patch: Partial<ContentItem>) => void;
 }
+
+/**
+ * A row still `UPLOADED` this long after creation has lost its transcode
+ * dispatch. Mirrors `TranscodeSweeper`'s `app.video.sweeper.stale-alert-after`
+ * (default `PT10M`) — the same age at which the backend raises its own alert.
+ */
+const STALL_UPLOADED_MS = 10 * 60 * 1000;
+
+/**
+ * A row `TRANSCODING` this long has almost certainly been killed mid-ffmpeg.
+ * Mirrors `app.video.sweeper.lease-timeout` (default `PT20M`), so the FE never
+ * declares a row stuck while the server still considers its lease live and is
+ * about to reclaim it.
+ *
+ * Both thresholds are heuristics on data the listing already carries. If the
+ * backend ever puts its own verdict on the row (`stalled`), that wins — see
+ * {@link isRowStalled}.
+ */
+const STALL_TRANSCODING_MS = 20 * 60 * 1000;
+
+const ageMs = (iso: string | null, now: number): number | null => {
+  if (iso === null) return null;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? now - t : null;
+};
+
+/**
+ * Is this row stuck? The server's own `stalled` verdict wins whenever it
+ * sends one; the age heuristic below is the fallback for a backend that
+ * predates the transcode-lease migration.
+ *
+ * Exported for direct unit testing — pure, no side effects.
+ */
+export const isRowStalled = (row: ContentFileSummary, now: number = Date.now()): boolean => {
+  if (row.stalled !== null) return row.stalled;
+  if (row.status === 'UPLOADED') {
+    const age = ageMs(row.createdAt, now);
+    return age !== null && age >= STALL_UPLOADED_MS;
+  }
+  if (row.status === 'TRANSCODING') {
+    // `updatedAt` is the fallback basis precisely because it does NOT advance
+    // during the encode: the row is touched when it enters TRANSCODING and
+    // not again until the terminal state.
+    const age = ageMs(row.transcodeStartedAt ?? row.updatedAt, now);
+    return age !== null && age >= STALL_TRANSCODING_MS;
+  }
+  return false;
+};
 
 const STATUS_DOWN: Record<ContentFileStatus, ContentStatus> = {
   UPLOADED: 'uploading',
@@ -71,6 +138,8 @@ export const contentSummaryToItem = (row: ContentFileSummary): ContentItem => ({
   thumbnailUrl: row.thumbnailUrl,
   uploadedByUsername: row.uploadedByUsername,
   canManage: row.canManage,
+  stalled: isRowStalled(row),
+  createdAt: row.createdAt,
 });
 
 export const useContentItems = (query: ContentItemsQuery): ContentItemsState => {
@@ -117,5 +186,9 @@ export const useContentItems = (query: ContentItemsQuery): ContentItemsState => 
     setRefreshKey((k) => k + 1);
   }, []);
 
-  return { items, totalPages, totalItems, isLoading, isStale, refresh };
+  const patchItem = useCallback((id: string, patch: Partial<ContentItem>): void => {
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+  }, []);
+
+  return { items, totalPages, totalItems, isLoading, isStale, refresh, patchItem };
 };

@@ -58,6 +58,11 @@ const en = {
   pickerNotice: 'Showing the first {{count}} READY content files.',
   pickerNoticeProject: 'Showing the first {{count}} READY content files in {{project}}.',
   noReadyContent: 'No READY content available.',
+  pendingContentHint_one:
+    '{{count}} file is still being processed and cannot be added yet.',
+  pendingContentHint_other:
+    '{{count}} files are still being processed and cannot be added yet.',
+  pendingContentLink: 'Open the content library',
   add: 'Add',
 
   // Errors / toasts
@@ -144,6 +149,11 @@ export const dict = {
     pickerNotice: 'Показаны первые {{count}} файлов контента со статусом READY.',
     pickerNoticeProject: 'Показаны первые {{count}} файлов контента со статусом READY в проекте {{project}}.',
     noReadyContent: 'Нет доступного контента со статусом READY.',
+    pendingContentHint_one:
+      '{{count}} файл ещё обрабатывается и пока не может быть добавлен.',
+    pendingContentHint_other:
+      '{{count}} файлов ещё обрабатываются и пока не могут быть добавлены.',
+    pendingContentLink: 'Открыть библиотеку контента',
     add: 'Добавить',
 
     // Errors / toasts
@@ -227,6 +237,11 @@ export const dict = {
     pickerNotice: 'READY holatidagi dastlabki {{count}} ta kontent fayli koʻrsatilmoqda.',
     pickerNoticeProject: '{{project}} loyihasidagi READY holatidagi dastlabki {{count}} ta kontent fayli koʻrsatilmoqda.',
     noReadyContent: 'READY holatidagi kontent mavjud emas.',
+    pendingContentHint_one:
+      '{{count}} ta fayl hali qayta ishlanmoqda va hozircha qoʻshib boʻlmaydi.',
+    pendingContentHint_other:
+      '{{count}} ta fayl hali qayta ishlanmoqda va hozircha qoʻshib boʻlmaydi.',
+    pendingContentLink: 'Kontent kutubxonasini ochish',
     add: 'Qoʻshish',
 
     // Errors / toasts

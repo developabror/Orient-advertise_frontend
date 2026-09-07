@@ -75,6 +75,24 @@ export type {
   DeviceListItem,
   DeviceStatus,
 } from './resources/devices';
+// Remote control — control plane only. The relay socket itself lives in
+// `./relayClient`, deliberately NOT re-exported here: it is not an API
+// resource and must never be mistaken for one.
+export {
+  getDeviceConnection,
+  getRemoteSession,
+  isTerminalStatus,
+  startRemoteSession,
+  stopRemoteSession,
+  stopRemoteSessionBeacon,
+} from './resources/remoteControl';
+export type {
+  RemoteCapability,
+  RemoteInputMode,
+  RemoteSession,
+  RemoteSessionStatus,
+  RemoteSessionView,
+} from './resources/remoteControl';
 export {
   getDiagnostics,
   issueDeviceAction,
@@ -185,6 +203,7 @@ export {
   getContent,
   getContentStreamUrl,
   listContent,
+  retranscodeContent,
   setContentProject,
   softDeleteContent,
 } from './resources/content';
@@ -193,6 +212,7 @@ export type {
   ContentFileStatus,
   ContentFileSummary,
   ContentListFilters,
+  RetranscodeResponse,
   StreamUrlResponse,
 } from './resources/content';
 export {

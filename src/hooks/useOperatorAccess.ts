@@ -92,6 +92,10 @@ const sanitizeContent = (v: unknown): ContentItem | null => {
     thumbnailUrl: typeof r.thumbnailUrl === 'string' ? r.thumbnailUrl : null,
     uploadedByUsername: typeof r.uploadedByUsername === 'string' ? r.uploadedByUsername : null,
     canManage: typeof r.canManage === 'boolean' ? r.canManage : false,
+    // Transcode-stall state belongs to the content grid, not the access UI;
+    // this endpoint carries neither the lease fields nor `createdAt`.
+    stalled: false,
+    createdAt: typeof r.createdAt === 'string' ? r.createdAt : '',
   };
 };
 
@@ -208,6 +212,8 @@ export const useOperatorAccess = (userId: string): UseOperatorAccessResult => {
         thumbnailUrl: null,
         uploadedByUsername: null,
         canManage: false,
+        stalled: false,
+        createdAt: '',
       };
       setLinked((curr) => (curr.some((c) => c.id === stub.id) ? curr : [...curr, stub]));
       return stub;

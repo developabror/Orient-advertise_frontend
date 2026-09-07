@@ -3,19 +3,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../http', () => ({
-  http: { get: vi.fn(), delete: vi.fn() },
+  http: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }));
 
 import { http } from '../../http';
 import {
   getContent,
   listContent,
+  retranscodeContent,
   softDeleteContent,
   type ContentFileDetail,
   type ContentFileSummary,
 } from '../content';
 
 const mockGet = http.get as unknown as ReturnType<typeof vi.fn>;
+const mockPost = http.post as unknown as ReturnType<typeof vi.fn>;
 const mockDelete = http.delete as unknown as ReturnType<typeof vi.fn>;
 
 const make = (status: number, message: string): unknown => ({
@@ -54,16 +56,22 @@ const validRow = (over: Partial<ContentFileSummary> = {}): ContentFileSummary =>
   thumbnailExpiresAt: null,
   uploadedByUsername: null,
   canManage: false,
+  transcodeStartedAt: null,
+  transcodeAttempts: null,
+  transcodeLastError: null,
+  stalled: null,
   ...over,
 });
 
 beforeEach(() => {
   mockGet.mockReset();
+  mockPost.mockReset();
   mockDelete.mockReset();
 });
 
 afterEach(() => {
   mockGet.mockReset();
+  mockPost.mockReset();
   mockDelete.mockReset();
 });
 
@@ -215,5 +223,91 @@ describe('softDeleteContent', () => {
     expect(surface.response?.data?.message).toBe(
       'In use by 3 playlists: Spring Promo, Summer Push, Holiday',
     );
+  });
+});
+
+// Transcode-lease fields are liberal-on-read: a backend deployed before the
+// V44 migration simply omits them, and the FE has to degrade to its own age
+// heuristic rather than failing the whole listing.
+describe('parseContentFileSummary — transcode lease fields', () => {
+  it('parses the lease fields when the backend sends them', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: {
+        content: [
+          validRow({
+            status: 'TRANSCODING',
+            transcodeStartedAt: '2026-09-06T11:30:00Z',
+            transcodeAttempts: 2,
+            transcodeLastError: 'ffmpeg exited 1',
+            stalled: true,
+          }),
+        ],
+      },
+    });
+
+    const page = await listContent({}, { page: 0, size: 50 });
+
+    expect(page.content[0]).toMatchObject({
+      transcodeStartedAt: '2026-09-06T11:30:00Z',
+      transcodeAttempts: 2,
+      transcodeLastError: 'ffmpeg exited 1',
+      stalled: true,
+    });
+  });
+
+  it('defaults them to null on a pre-migration backend instead of throwing', async () => {
+    const { transcodeStartedAt: _a, transcodeAttempts: _b, transcodeLastError: _c, stalled: _d, ...legacy } =
+      validRow();
+    mockGet.mockResolvedValueOnce({ data: { content: [legacy] } });
+
+    const page = await listContent({}, { page: 0, size: 50 });
+
+    expect(page.content[0]).toMatchObject({
+      transcodeStartedAt: null,
+      transcodeAttempts: null,
+      transcodeLastError: null,
+      stalled: null,
+    });
+  });
+
+  it('treats a malformed lease value as "not told" rather than failing the row', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: { content: [validRow({ stalled: 'yes', transcodeAttempts: 'many' } as never)] },
+    });
+
+    const page = await listContent({}, { page: 0, size: 50 });
+
+    expect(page.content).toHaveLength(1);
+    expect(page.content[0]).toMatchObject({ stalled: null, transcodeAttempts: null });
+  });
+});
+
+describe('retranscodeContent', () => {
+  it('POSTs to /api/content/{id}/retranscode and returns the committed status', async () => {
+    mockPost.mockResolvedValueOnce({ data: { id: 7, status: 'TRANSCODING' } });
+
+    await expect(retranscodeContent(7)).resolves.toEqual({ status: 'TRANSCODING' });
+    expect(mockPost).toHaveBeenCalledWith('/api/content/7/retranscode');
+  });
+
+  it('reports status: null when the body carries nothing recognisable', async () => {
+    // The caller then falls back to an optimistic TRANSCODING rather than
+    // inventing a status the server never sent.
+    for (const data of [undefined, null, '', {}, { status: 'PENDING' }]) {
+      mockPost.mockResolvedValueOnce({ data });
+      await expect(retranscodeContent(7)).resolves.toEqual({ status: null });
+    }
+  });
+
+  it('does not suppress anything — the 409 bubbles with its message intact', async () => {
+    // The resource stays neutral so the caller can render the message inline
+    // AND claim the error; suppressing here without rendering would turn
+    // Retry into a silent no-op.
+    const err = make(409, 'Content is not in a retryable status (READY).');
+    mockPost.mockRejectedValueOnce(err);
+
+    await expect(retranscodeContent(7)).rejects.toBe(err);
+    const surface = err as { response?: { data?: { message?: string } } };
+    expect(surface.response?.data?.message).toBe('Content is not in a retryable status (READY).');
   });
 });

@@ -71,6 +71,28 @@ export interface ContentFileSummary {
    * delete button on this — no role re-derivation.
    */
   readonly canManage: boolean;
+  /**
+   * Transcode-lease accounting, added alongside the backend's transcode
+   * sweeper (`V44__content_file_transcode_lease.sql`). All four are
+   * **liberal-on-read**: they parse to `null` when the deployed backend
+   * predates the migration, so the FE degrades to deriving stall from
+   * `createdAt` / `updatedAt` rather than breaking.
+   *
+   * `transcodeStartedAt` is the instant the row was claimed for encoding —
+   * the only trustworthy age basis for a `TRANSCODING` row, because
+   * `updatedAt` does not advance during the ffmpeg run.
+   */
+  readonly transcodeStartedAt: string | null;
+  /** How many times the row has been claimed. Capped at 3 server-side. */
+  readonly transcodeAttempts: number | null;
+  /** Last transcode failure reason, when the backend records one. */
+  readonly transcodeLastError: string | null;
+  /**
+   * Server's own verdict that the row is stuck. **Authoritative when
+   * present** — the FE's age heuristic is only the fallback for backends
+   * that don't compute it.
+   */
+  readonly stalled: boolean | null;
 }
 
 /**
@@ -104,6 +126,18 @@ const strOrNull = (v: unknown): string | null => {
   throw new Error('expected string or null');
 };
 
+// Liberal-on-read: an absent key (older backend) and an explicit null are
+// both "the server didn't tell us", which is distinct from `false`. A
+// malformed value is treated the same way rather than failing the whole page
+// — these fields decorate a row, they don't define it.
+const boolOrNull = (v: unknown): boolean | null =>
+  typeof v === 'boolean' ? v : null;
+
+const optionalNum = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : null;
+
+const optionalStr = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
 const parseContentFileSummary = (raw: unknown): ContentFileSummary => {
   if (typeof raw !== 'object' || raw === null) throw new Error('row is not an object');
   const v = raw as Record<string, unknown>;
@@ -134,6 +168,10 @@ const parseContentFileSummary = (raw: unknown): ContentFileSummary => {
     // Fail-closed: default to false when absent so we never show a delete
     // button we're unsure about during a rollout.
     canManage: typeof v.canManage === 'boolean' ? v.canManage : false,
+    transcodeStartedAt: optionalStr(v.transcodeStartedAt),
+    transcodeAttempts: optionalNum(v.transcodeAttempts),
+    transcodeLastError: optionalStr(v.transcodeLastError),
+    stalled: boolOrNull(v.stalled),
   };
 };
 
@@ -274,4 +312,54 @@ export const getContentStreamUrl = async (
     `/api/content/${String(id)}/stream-url`,
   );
   return data;
+};
+
+/** Response of `POST /api/content/{id}/retranscode`. */
+export interface RetranscodeResponse {
+  /**
+   * The status the backend committed for the row, so the card can render
+   * the new state without waiting for a refetch. `null` when the response
+   * body carried nothing recognisable — the caller then falls back to an
+   * optimistic `TRANSCODING` and lets WS/poll correct it.
+   */
+  readonly status: ContentFileStatus | null;
+}
+
+/**
+ * POST /api/content/{id}/retranscode — re-drive a content file through the
+ * transcode pipeline.
+ *
+ * The operator's only alternative before this existed was delete-and-
+ * re-upload, which re-runs the same race, strands the original raw object in
+ * MinIO, and burns more of an already-tight production disk.
+ *
+ * **ADMIN/OPERATOR only.** Gate the button on the caller's role — rendering
+ * an action that can only 403 is worse than not rendering it.
+ *
+ * Failure modes (axios throws; this resource does NOT suppress anything, so
+ * the caller decides between an inline message and the global handlers):
+ *  - **404** — content id unknown or soft-deleted.
+ *  - **409** — status is not `UPLOADED`/`FAILED` (i.e. already `READY` or
+ *    mid-encode), or the raw `storageKey` is gone. **The 409 envelope always
+ *    carries a `message`** naming which; render it inline, verbatim.
+ *  - **403** — caller lacks ADMIN/OPERATOR.
+ *
+ * ```ts
+ * try { await retranscodeContent(id); }
+ * catch (err) {
+ *   // markErrorHandled(err) FIRST — it's what cancels the global modal.
+ *   // `_suppressErrorToast` alone would not, and suppressing without
+ *   // rendering the message yourself leaves the operator with a no-op.
+ *   markErrorHandled(err);
+ *   showInlineError(extractApiMessage(err));
+ * }
+ * ```
+ */
+export const retranscodeContent = async (id: number): Promise<RetranscodeResponse> => {
+  const { data } = await http.post<unknown>(`/api/content/${String(id)}/retranscode`);
+  if (typeof data === 'object' && data !== null) {
+    const v = data as Record<string, unknown>;
+    if (isContentFileStatus(v.status)) return { status: v.status };
+  }
+  return { status: null };
 };

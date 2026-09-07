@@ -15,11 +15,41 @@ import { Spinner } from './ui/Spinner';
 const MAX_BYTES = 50 * 1024 * 1024;
 const MAX_MB_LABEL = '50 MB';
 const POLL_MS = 5_000;
-// Give up polling after this long stuck in TRANSCODING. A dead fire-and-forget
-// transcode would otherwise leave the bar frozen at 100% "Processing" forever.
+// Stop polling after this long without reaching a terminal status.
+//
+// The real-world stall is stuck in **UPLOADED**, not TRANSCODING: a lost
+// `@Async` dispatch means ffmpeg never starts and the row never leaves the
+// pre-transcode state. (The earlier comment here said "stuck in TRANSCODING",
+// which is why nobody looked at this file during the incident.)
+//
+// This deadline is a *local* give-up, not the source of truth. The persistent
+// stalled state is derived from server data in `useContentItems` and rendered
+// by `ContentCard`, so it survives the reload that erases this component.
 const MAX_POLL_MS = 10 * 60 * 1000;
 
-type UploadStatus = 'rejected' | 'uploading' | 'processing' | 'ready' | 'failed' | 'cancelled';
+/**
+ * `'queued'` and `'processing'` are deliberately distinct.
+ *
+ *  - `'queued'`     — the backend reports `UPLOADED`. The file is on the
+ *                     server waiting to be picked up. **No transcode has
+ *                     started.** Claiming one here is what turned a lost
+ *                     dispatch into "30 minutes of transcoding" in an
+ *                     operator's report.
+ *  - `'processing'` — the backend reports `TRANSCODING`. ffmpeg is running.
+ */
+type UploadStatus =
+  | 'rejected'
+  | 'uploading'
+  | 'queued'
+  | 'processing'
+  | 'ready'
+  | 'failed'
+  | 'cancelled';
+
+// Statuses whose entry is still in flight and may be advanced by a poll tick,
+// a WS frame, or cancelled by the operator.
+const isInFlight = (status: UploadStatus): boolean =>
+  status === 'uploading' || status === 'queued' || status === 'processing';
 
 interface UploadEntry {
   readonly localId: string;
@@ -101,6 +131,14 @@ const isContentDetail = (v: unknown): v is ContentDetail => {
   );
 };
 
+// The label is derived from the status the backend actually reports, never
+// from the 202 that accepted the upload. `UPLOADED` is "Queued", not
+// "Transcoding on server…".
+const NON_TERMINAL_STATUS: Partial<Record<ContentStatus, UploadStatus>> = {
+  UPLOADED: 'queued',
+  TRANSCODING: 'processing',
+};
+
 const statusLabel = (t: TFunction, status: UploadStatus): string =>
   t(`contentUploader.status_${status}`);
 
@@ -141,7 +179,14 @@ export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
 
   const startPolling = (localId: string, contentId: string): void => {
     const deadline = Date.now() + MAX_POLL_MS;
+    // In-flight guard. `setInterval` fires on a fixed 5s cadence regardless of
+    // whether the previous GET has come back; against a backend slower than
+    // POLL_MS the requests overlapped and stacked, and out-of-order responses
+    // could walk the entry backwards. One request in flight per entry, always.
+    let pending = false;
     const tick = async (): Promise<void> => {
+      if (pending) return;
+      pending = true;
       try {
         const { data } = await http.get<unknown>(`/api/content/${contentId}`, {
           _suppressErrorToast: true,
@@ -166,18 +211,36 @@ export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
             onItemReadyRef.current?.();
             return;
           }
+          // Non-terminal: mirror what the backend actually reports. UPLOADED
+          // stays "Queued" — the upload was accepted, nothing is transcoding.
+          //
+          // This deliberately lets a poll walk 'processing' back to 'queued'
+          // when GET /api/content/{id} still says UPLOADED. That only happens
+          // while the API and the live feed disagree — i.e. when a TRANSCODING
+          // frame was broadcast pre-commit — and the committed row is the
+          // truthful answer. Papering over it here would restore exactly the
+          // "it says it's transcoding" illusion this change removes.
+          const observed = NON_TERMINAL_STATUS[data.status];
+          if (observed !== undefined) {
+            dispatch({ type: 'update', localId, patch: { status: observed } });
+          }
         }
       } catch {
         // Best-effort polling; fall through to the deadline check and retry.
+      } finally {
+        pending = false;
       }
       // Deadline fallback. WS (CONTENT_STATUS_CHANGE) is the fast path; this
-      // poll covers a disconnected socket. After MAX_POLL_MS still not terminal,
-      // stop and surface a timeout rather than spinning at 100% forever.
+      // poll covers a disconnected socket. After MAX_POLL_MS still not
+      // terminal, stop polling and hand the operator over to the persistent,
+      // server-derived stalled state on the content card — which is where the
+      // Retry action lives. Deliberately does NOT tell them to reload: this
+      // component's state is the one thing a reload destroys.
       if (Date.now() >= deadline) {
         dispatch({
           type: 'update',
           localId,
-          patch: { status: 'failed', error: t('contentUploader.errorProcessingTimedOut') },
+          patch: { status: 'failed', error: t('contentUploader.errorProcessingStalled') },
         });
         stopPolling(localId);
         onItemReadyRef.current?.();
@@ -230,11 +293,16 @@ export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
         return;
       }
       const contentId = String(data.fileId);
+      // A 202 means "upload accepted", nothing more. The row is UPLOADED
+      // server-side; the very next poll tick promotes it to 'processing' if
+      // and only if the backend reports TRANSCODING. `data.status` from the
+      // upload envelope is deliberately ignored — it is the status at the
+      // moment of the response, not an observation of the pipeline.
       dispatch({
         type: 'update',
         localId,
         patch: {
-          status: 'processing',
+          status: 'queued',
           progressPct: 100,
           contentId,
         },
@@ -334,7 +402,7 @@ export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
     const contentId = String(event.contentId);
     const entry = entries.find((e) => e.contentId === contentId);
     if (entry === undefined) return;
-    if (entry.status !== 'uploading' && entry.status !== 'processing') return;
+    if (!isInFlight(entry.status)) return;
     if (event.status === 'READY') {
       dispatch({ type: 'update', localId: entry.localId, patch: { status: 'ready', progressPct: 100 } });
       stopPolling(entry.localId);
@@ -347,13 +415,22 @@ export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
       });
       stopPolling(entry.localId);
       onItemReadyRef.current?.();
-    } else if (typeof event.progressPct === 'number') {
-      // TRANSCODING with a fine-grained percentage — advance the bar, stay
-      // in 'processing'.
+    } else {
+      // Only TRANSCODING is left in ContentWsStatus (UPLOADED is never
+      // broadcast), so the backend has committed TRANSCODING — ffmpeg is
+      // genuinely running,
+      // and promoting a 'queued' entry to 'processing' here is truthful. With
+      // a fine-grained percentage the bar goes determinate; without one it
+      // keeps its current value (100 → indeterminate spinner).
       dispatch({
         type: 'update',
         localId: entry.localId,
-        patch: { status: 'processing', progressPct: Math.min(99, Math.max(0, event.progressPct)) },
+        patch: {
+          status: 'processing',
+          ...(typeof event.progressPct === 'number'
+            ? { progressPct: Math.min(99, Math.max(0, event.progressPct)) }
+            : {}),
+        },
       });
     }
   });
@@ -408,7 +485,7 @@ export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
       {entries.length > 0 && (
         <ul className="oa-uploader__list">
           {entries.map((entry) => {
-            const showCancel = entry.status === 'uploading' || entry.status === 'processing';
+            const showCancel = isInFlight(entry.status);
             return (
               <li key={entry.localId} className="oa-uploader__item" data-status={entry.status}>
                 <div className="oa-uploader__item-head">
@@ -431,6 +508,13 @@ export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
                       className="oa-uploader__progress-fill"
                       style={{ width: `${String(entry.progressPct)}%` }}
                     />
+                  </div>
+                )}
+
+                {entry.status === 'queued' && (
+                  <div className="oa-uploader__processing">
+                    <Spinner size="sm" label={t('contentUploader.status_queued')} />
+                    <span>{t('contentUploader.queuedOnServer')}</span>
                   </div>
                 )}
 

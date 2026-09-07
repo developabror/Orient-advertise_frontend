@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout, ProtectedRoute, SettingsLayout } from '@components';
 import {
@@ -27,6 +28,19 @@ import {
   UsersPage,
 } from '@pages';
 
+/**
+ * The only lazily-loaded page, and the only one imported outside `@pages`.
+ *
+ * It pulls in the scrcpy protocol client and the WebCodecs decoder — ~90 kB
+ * (~29 kB gzipped) that every operator would otherwise download on every
+ * dashboard load for a screen most sessions never open. Importing it through
+ * the `@pages` barrel would put it straight back in the main chunk, which is
+ * why `pages/index.ts` deliberately does not re-export it.
+ */
+const DeviceRemotePage = lazy(async () => ({
+  default: (await import('./pages/DeviceRemotePage')).DeviceRemotePage,
+}));
+
 export const App = () => (
   <Routes>
     <Route path="/login" element={<LoginPage />} />
@@ -54,6 +68,17 @@ export const App = () => (
           <Route path="/devices/:id" element={<DeviceDetailPage />} />
         </Route>
         <Route element={<ProtectedRoute roles={['admin', 'operator']} />}>
+          {/* Remote viewer sits in the admin/operator block, NOT beside
+              /devices/:id above — that block admits `advertiser`, who must
+              never reach a live screen (contract §7 rule 6). */}
+          <Route
+            path="/devices/:id/remote"
+            element={
+              <Suspense fallback={null}>
+                <DeviceRemotePage />
+              </Suspense>
+            }
+          />
           <Route path="/content" element={<ContentPage />} />
           <Route path="/playlists" element={<PlaylistsPage />} />
           {/* Sync groups: promoted out of /settings into a top-level nav item. */}

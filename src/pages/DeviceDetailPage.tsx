@@ -431,6 +431,26 @@ export const DeviceDetailPage = () => {
               <h2>{t('deviceDetailPage.remoteActions')}</h2>
             </header>
             <div className="oa-actions-panel__buttons">
+              {/* Navigation, not a session start — the viewer owns Connect so a
+                  stray back/forward can't put a box on a metered stream.
+                  Liveness is resolved there too, where it decides whether the
+                  operator waits seconds or two minutes; polling /connection
+                  from this page would cost a request per device view for
+                  information nobody acts on here. */}
+              <Button
+                variant="primary"
+                disabled={device.remoteCapability?.supported === false}
+                title={
+                  device.remoteCapability?.supported === false
+                    ? t('deviceDetailPage.connectRemoteUnsupported')
+                    : t('deviceDetailPage.connectRemoteUnknown')
+                }
+                onClick={() => {
+                  navigate(`/devices/${encodeURIComponent(device.id)}/remote`);
+                }}
+              >
+                {t('deviceDetailPage.connectRemote')}
+              </Button>
               <Button
                 variant="secondary"
                 onClick={diagnostics.fetch}

@@ -70,7 +70,14 @@ export const criticalAlerts = {
    * operator already dismissed it locally, or this client never saw
    * the original CRITICAL).
    */
-  acknowledge: (id: string, acknowledgedAt: string, acknowledgedBy: string | null): void => {
+  // `acknowledgedAt` is nullable: the INCIDENT_UPDATED frame renders
+  // `updatedAt` as an explicit JSON null when the backend payload has none,
+  // and `CriticalAlert.acknowledgedAt` is already `string | null`.
+  acknowledge: (
+    id: string,
+    acknowledgedAt: string | null,
+    acknowledgedBy: string | null,
+  ): void => {
     const existing = store.get(id);
     if (existing === undefined) return;
     if (

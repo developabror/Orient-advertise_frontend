@@ -26,8 +26,16 @@ interface IncidentPayloadFields {
   readonly status: IncidentStatus;
   readonly priority: IncidentPriority;
   readonly description: string;
-  readonly openedAt: string;
-  readonly updatedAt: string;
+  /**
+   * **Nullable on the wire.** `RedisDashboardEventBroadcaster.incidentJson`
+   * renders `p.openedAt() == null ? "null" : ...` — an explicit JSON `null`,
+   * not an omitted key. Typing these as bare `string` (and guarding with
+   * `typeof === 'string'`) silently dropped the whole frame; see the
+   * `invalidReason` note on {@link ContentStatusChangeEvent}. Consumers
+   * coalesce at their own boundary.
+   */
+  readonly openedAt: string | null;
+  readonly updatedAt: string | null;
   readonly actor: string | null;
 }
 
@@ -100,8 +108,24 @@ export interface ContentStatusChangeEvent {
   readonly type: 'CONTENT_STATUS_CHANGE';
   readonly contentId: number;
   readonly status: ContentWsStatus;
-  readonly invalidReason?: string;
-  readonly progressPct?: number;
+  /**
+   * **`null` on every non-INVALID frame, never `undefined`.** The backend
+   * renders the key unconditionally —
+   * `RedisDashboardEventBroadcaster.contentStatusChanged` emits
+   * `p.invalidReason() == null ? "null" : "\"…\""` — and JSON has no
+   * `undefined`. A `string`-or-`undefined` guard therefore rejected every
+   * `READY` frame (only `INVALID` supplies a reason string), which killed
+   * live transcode status outright. Consumers already do
+   * `event.invalidReason ?? fallback`, so `null` flows through correctly.
+   */
+  readonly invalidReason?: string | null;
+  /**
+   * Fine-grained transcode percentage (0–100). The current broadcaster
+   * never emits this key at all, so it reads `undefined` in production;
+   * `null` is admitted defensively because that is how this publisher
+   * renders every other nullable field.
+   */
+  readonly progressPct?: number | null;
 }
 
 export type WsEvent =
@@ -143,8 +167,11 @@ const isIncidentPayload = (v: Record<string, unknown>): boolean =>
   isIncidentStatus(v.status) &&
   isIncidentPriority(v.priority) &&
   typeof v.description === 'string' &&
-  typeof v.openedAt === 'string' &&
-  typeof v.updatedAt === 'string' &&
+  // Nullable-but-always-present: the broadcaster emits an explicit `null`
+  // for these three, never an omitted key. `undefined` therefore still
+  // fails — a missing field is a malformed frame, an explicit null is not.
+  (v.openedAt === null || typeof v.openedAt === 'string') &&
+  (v.updatedAt === null || typeof v.updatedAt === 'string') &&
   (v.actor === null || typeof v.actor === 'string');
 
 // Exported for direct unit testing. Pure function, no side effects.
@@ -170,9 +197,13 @@ export const isWsEvent = (value: unknown): value is WsEvent => {
   }
   if (v.type === 'CONTENT_STATUS_CHANGE') {
     const contentIdOk = typeof v.contentId === 'number' && Number.isFinite(v.contentId);
-    const reasonOk = v.invalidReason === undefined || typeof v.invalidReason === 'string';
+    const reasonOk =
+      v.invalidReason === undefined ||
+      v.invalidReason === null ||
+      typeof v.invalidReason === 'string';
     const pctOk =
       v.progressPct === undefined ||
+      v.progressPct === null ||
       (typeof v.progressPct === 'number' && Number.isFinite(v.progressPct));
     return contentIdOk && isContentWsStatus(v.status) && reasonOk && pctOk;
   }
@@ -196,10 +227,37 @@ export const isWsEvent = (value: unknown): value is WsEvent => {
 const AUTH_CLOSE_CODES = new Set<number>([1008, 4001, 4401]);
 const AUTH_REASON_PATTERN = /unauthor|token|auth|expired/i;
 
+/**
+ * Reasons {@link WsClient.handleMessage} can discard an inbound frame.
+ * Surfaced through {@link WsClient.getDroppedFrames} so a regression in the
+ * wire contract is *countable* rather than invisible.
+ */
+export type DroppedFrameReason = 'non-string' | 'unparseable' | 'rejected-by-guard';
+
+export type DroppedFrameCounts = Readonly<Record<DroppedFrameReason, number>>;
+
+const ZERO_DROPS: DroppedFrameCounts = {
+  'non-string': 0,
+  unparseable: 0,
+  'rejected-by-guard': 0,
+};
+
+// Preview cap for the warn line. Frames are dashboard telemetry (ids,
+// statuses, incident descriptions) — no credentials ride on this channel;
+// the access token travels in the handshake URL, never in a frame. Still
+// truncated so a pathological payload can't flood the console.
+const DROP_PREVIEW_CHARS = 200;
+
 class WsClient {
   private socket: WebSocket | null = null;
   private status: WsStatus = 'idle';
   private failures = 0;
+  // A silently-dropped frame is how a dead live feed survived in production
+  // for a full day: `isWsEvent` rejected every READY frame and nothing —
+  // no log, no counter — said so. Every discard now increments here and
+  // warns once, so the next wire-contract drift is visible in devtools and
+  // assertable from a test.
+  private droppedFrames: Record<DroppedFrameReason, number> = { ...ZERO_DROPS };
   private retryTimer: number | null = null;
   private intentionalClose = false;
   // Token used for the current/most-recent connect attempt. Forwarded to
@@ -228,6 +286,20 @@ class WsClient {
 
   getStatus(): WsStatus {
     return this.status;
+  }
+
+  /**
+   * Per-reason tally of frames `handleMessage` refused to deliver. Any
+   * non-zero `rejected-by-guard` count means the server is sending a shape
+   * {@link isWsEvent} does not admit — i.e. a live feature is silently dead.
+   */
+  getDroppedFrames(): DroppedFrameCounts {
+    return { ...this.droppedFrames };
+  }
+
+  /** Test seam — reset the tallies between cases. */
+  resetDroppedFrames(): void {
+    this.droppedFrames = { ...ZERO_DROPS };
   }
 
   onStatus(fn: StatusListener): () => void {
@@ -298,17 +370,37 @@ class WsClient {
   }
 
   private handleMessage(event: MessageEvent<unknown>): void {
-    if (typeof event.data !== 'string') return;
+    if (typeof event.data !== 'string') {
+      this.dropFrame('non-string', typeof event.data);
+      return;
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(event.data);
     } catch {
+      this.dropFrame('unparseable', event.data);
       return;
     }
-    if (!isWsEvent(parsed)) return;
+    if (!isWsEvent(parsed)) {
+      // The single most valuable log line in this file. A frame that parses
+      // but fails the guard is a *contract* break, not a transport glitch —
+      // the payload preview names the field that drifted.
+      this.dropFrame('rejected-by-guard', event.data);
+      return;
+    }
     this.eventListeners.forEach((fn) => {
       fn(parsed);
     });
+  }
+
+  private dropFrame(reason: DroppedFrameReason, raw: unknown): void {
+    this.droppedFrames[reason] += 1;
+    const preview =
+      typeof raw === 'string' ? raw.slice(0, DROP_PREVIEW_CHARS) : String(raw);
+    console.warn(
+      `[wsClient] dropped frame (${reason}); count=${String(this.droppedFrames[reason])}`,
+      preview,
+    );
   }
 
   private handleClose(event: CloseEvent): void {

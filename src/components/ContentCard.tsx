@@ -10,6 +10,21 @@ interface Props {
   onSchedules?: (id: string) => void;
   onPreview?: (id: string) => void;
   onDelete?: (id: string) => void;
+  /**
+   * Re-drive this row through the transcode pipeline. **Omit entirely for
+   * roles the backend would 403** (retranscode is ADMIN/OPERATOR) — an
+   * action that cannot succeed should not be rendered.
+   */
+  onRetry?: (id: string) => void;
+  /** A retranscode call is in flight for this row. */
+  isRetrying?: boolean;
+  /**
+   * Message from a failed retry — typically the backend's 409 envelope
+   * `message`, rendered here verbatim. It has to be visible on the card:
+   * suppressing the global handlers without rendering the reason yourself
+   * leaves the operator staring at a button that did nothing.
+   */
+  retryError?: string | null;
 }
 
 const STATUS_VARIANT: Record<ContentStatus, 'success' | 'warning' | 'error' | 'info'> = {
@@ -40,18 +55,35 @@ const formatBytes = (bytes: number): string => {
   return `${value.toFixed(decimals)} ${units[unitIndex] ?? 'B'}`;
 };
 
-export const ContentCard = ({ item, layout, onSchedules, onPreview, onDelete }: Props) => {
+export const ContentCard = ({
+  item,
+  layout,
+  onSchedules,
+  onPreview,
+  onDelete,
+  onRetry,
+  isRetrying = false,
+  retryError = null,
+}: Props) => {
   const { t } = useTranslation();
   const statusLabel = t(`contentCard.status_${item.status}`);
   const isError = item.status === 'failed' || item.status === 'invalid';
-  const isTranscoding = item.status === 'transcoding' || item.status === 'uploading';
   const isReady = item.status === 'ready';
-  const errorTitle =
-    isError && item.errorMessage !== null && item.errorMessage !== ''
+  // A stalled row is not making progress, so it gets no progress bar and no
+  // "Processing…" placeholder — both read as activity that isn't happening.
+  const isStalled = item.stalled && !isReady;
+  const isTranscoding = (item.status === 'transcoding' || item.status === 'uploading') && !isStalled;
+  const errorTitle = isStalled
+    ? t('contentCard.stalledHint')
+    : isError && item.errorMessage !== null && item.errorMessage !== ''
       ? item.errorMessage
       : isError
         ? t('contentCard.processingFailed')
         : undefined;
+  // Retry is offered for anything that is neither finished nor actively
+  // encoding: a stuck UPLOADED row, a FAILED row, an INVALID row. A row the
+  // backend is genuinely mid-transcode on would only 409.
+  const canRetryRow = onRetry !== undefined && !isReady && item.status !== 'transcoding';
 
   // The whole card becomes the click target only for READY rows. We use
   // role="button" + tabIndex (rather than wrapping in a <button>) because the
@@ -87,7 +119,7 @@ export const ContentCard = ({ item, layout, onSchedules, onPreview, onDelete }: 
 
   return (
     <article
-      className={`oa-content-card oa-content-card--${layout}${isError ? ' oa-content-card--error' : ''}${clickable ? ' oa-content-card--clickable' : ''}`}
+      className={`oa-content-card oa-content-card--${layout}${isError ? ' oa-content-card--error' : ''}${isStalled ? ' oa-content-card--stalled' : ''}${clickable ? ' oa-content-card--clickable' : ''}`}
       data-status={item.status}
       title={errorTitle}
       role={clickable ? 'button' : undefined}
@@ -108,7 +140,11 @@ export const ContentCard = ({ item, layout, onSchedules, onPreview, onDelete }: 
           <div className="oa-content-card__thumb-placeholder">
             {!isReady && (
               <span className="oa-content-card__thumb-label">
-                {isError ? statusLabel : t('contentCard.processing')}
+                {isStalled
+                  ? t('contentCard.stalled')
+                  : isError
+                    ? statusLabel
+                    : t('contentCard.processing')}
               </span>
             )}
           </div>
@@ -121,6 +157,7 @@ export const ContentCard = ({ item, layout, onSchedules, onPreview, onDelete }: 
         </span>
         <div className="oa-content-card__badges">
           {item.urgent && <Badge variant="error">{t('contentCard.urgent')}</Badge>}
+          {isStalled && <Badge variant="warning">{t('contentCard.stalled')}</Badge>}
           <Badge variant={STATUS_VARIANT[item.status]}>{statusLabel}</Badge>
         </div>
       </div>
@@ -163,7 +200,18 @@ export const ContentCard = ({ item, layout, onSchedules, onPreview, onDelete }: 
           />
         </div>
       )}
-      {((onSchedules !== undefined && isReady) || canDeleteRow) && (
+      {isStalled && (
+        <p className="oa-content-card__stalled" role="status">
+          <span className="oa-content-card__stalled-title">{t('contentCard.stalledTitle')}</span>{' '}
+          <span className="oa-content-card__stalled-hint">{t('contentCard.stalledHint')}</span>
+        </p>
+      )}
+      {retryError !== null && retryError !== '' && (
+        <p className="oa-content-card__retry-error" role="alert">
+          {retryError}
+        </p>
+      )}
+      {((onSchedules !== undefined && isReady) || canRetryRow || canDeleteRow) && (
         <div className="oa-content-card__actions">
           {onSchedules !== undefined && isReady && (
             <Button
@@ -175,6 +223,19 @@ export const ContentCard = ({ item, layout, onSchedules, onPreview, onDelete }: 
               }}
             >
               {t('contentCard.schedules')}
+            </Button>
+          )}
+          {canRetryRow && (
+            <Button
+              variant="secondary"
+              size="sm"
+              isLoading={isRetrying}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry(item.id);
+              }}
+            >
+              {t('contentCard.retry')}
             </Button>
           )}
           {canDeleteRow && (

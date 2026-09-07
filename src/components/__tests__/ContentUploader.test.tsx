@@ -4,6 +4,11 @@
 //        ready/failed immediately, without waiting for the 5s poll.
 //   B2 — a never-completing transcode (always TRANSCODING) hits the polling
 //        deadline and surfaces a timeout instead of spinning at 100% forever.
+//   B3 — the label is derived from the status the backend REPORTS. A row the
+//        backend leaves at UPLOADED reads "Queued", never "Transcoding on
+//        server…" — the false claim that turned a lost async dispatch into an
+//        operator reporting "30 minutes of transcoding".
+//   B4 — tick() never has two requests in flight for one entry.
 //
 // useWsEvent is stubbed to capture the latest handler (a vi.hoisted holder so
 // the mock factory can reference it); http is mocked for the upload POST and
@@ -27,6 +32,9 @@ vi.mock('@api/http', () => ({
 
 import { http } from '@api/http';
 import { ContentUploader } from '../ContentUploader';
+
+// Mirrors POLL_MS in the component.
+const POLL_INTERVAL_MS = 5_000;
 
 const getFileInput = (container: HTMLElement): HTMLInputElement => {
   const el = container.querySelector('input[type="file"]');
@@ -75,11 +83,13 @@ beforeEach(() => {
   vi.mocked(http.post).mockResolvedValue({ data: { fileId: 123, status: 'TRANSCODING' } } as never);
   // Poll keeps reporting TRANSCODING (non-terminal) by default.
   vi.mocked(http.get).mockResolvedValue({ data: { id: 123, status: 'TRANSCODING' } } as never);
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   vi.mocked(http.delete).mockResolvedValue({ data: undefined } as never);
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('ContentUploader — live WS status (B1)', () => {
@@ -157,7 +167,7 @@ describe('ContentUploader — live WS status (B1)', () => {
 });
 
 describe('ContentUploader — polling deadline fallback (B2)', () => {
-  it('times out a never-completing transcode instead of spinning forever', async () => {
+  it('gives up on a never-completing transcode and points at the persistent card, not a refresh', async () => {
     vi.useFakeTimers();
     // The transcode never finishes — every poll says TRANSCODING.
     vi.mocked(http.get).mockResolvedValue({ data: { id: 123, status: 'TRANSCODING' } } as never);
@@ -177,7 +187,113 @@ describe('ContentUploader — polling deadline fallback (B2)', () => {
     });
 
     expect(screen.getByText('Failed')).toBeInTheDocument();
-    expect(screen.getByText(/timed out/i)).toBeInTheDocument();
+    const message = screen.getByText(/still not processed after 10 minutes/i);
+    expect(message).toBeInTheDocument();
+    // The old copy said "refresh to re-check" — the one action that destroys
+    // this component's state AND stops its polling for good.
+    expect(message.textContent ?? '').not.toMatch(/refresh|reload/i);
+  });
+});
+
+describe('ContentUploader — label follows the reported status (B3)', () => {
+  it('renders "Queued" (not a transcode claim) while the backend still says UPLOADED', async () => {
+    // The production incident exactly: the row never leaves UPLOADED because
+    // the async transcode dispatch was lost.
+    vi.mocked(http.get).mockResolvedValue({ data: { id: 123, status: 'UPLOADED' } } as never);
+
+    const { container } = render(<ContentUploader />);
+    selectVideo(container);
+
+    expect(await screen.findByText('Queued')).toBeInTheDocument();
+    expect(screen.getByText('Queued on the server — waiting to be picked up…')).toBeInTheDocument();
+    // The false claim that made this invisible for a day.
+    expect(screen.queryByText('Transcoding on server…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Processing')).not.toBeInTheDocument();
+  });
+
+  it('shows "Queued" from the 202 alone, before any status has been observed', async () => {
+    // The upload envelope's own `status` must not be trusted as an
+    // observation of the pipeline: a 202 means "accepted", nothing more.
+    vi.mocked(http.post).mockResolvedValue({
+      data: { fileId: 123, status: 'TRANSCODING' },
+    } as never);
+    // Poll never answers, so the only state is the one the 202 produced.
+    vi.mocked(http.get).mockReturnValue(new Promise(() => undefined) as never);
+
+    const { container } = render(<ContentUploader />);
+    selectVideo(container);
+
+    expect(await screen.findByText('Queued')).toBeInTheDocument();
+    expect(screen.queryByText('Transcoding on server…')).not.toBeInTheDocument();
+  });
+
+  it('promotes Queued → Processing once the backend actually reports TRANSCODING', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { id: 123, status: 'UPLOADED' } } as never);
+
+    const { container } = render(<ContentUploader />);
+    selectVideo(container);
+    await screen.findByText('Queued');
+
+    emitWs({ type: 'CONTENT_STATUS_CHANGE', contentId: 123, status: 'TRANSCODING' });
+
+    expect(await screen.findByText('Processing')).toBeInTheDocument();
+    expect(screen.getByText('Transcoding on server…')).toBeInTheDocument();
+    expect(screen.queryByText('Queued')).not.toBeInTheDocument();
+  });
+
+  it('flips a queued entry straight to Ready on a READY frame with invalidReason: null', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { id: 123, status: 'UPLOADED' } } as never);
+
+    const { container } = render(<ContentUploader />);
+    selectVideo(container);
+    await screen.findByText('Queued');
+
+    // The exact wire frame the backend emits — the one the old guard dropped.
+    emitWs({
+      type: 'CONTENT_STATUS_CHANGE',
+      contentId: 123,
+      status: 'READY',
+      invalidReason: null,
+    });
+
+    expect(await screen.findByText('Ready')).toBeInTheDocument();
+  });
+});
+
+describe('ContentUploader — poll in-flight guard (B4)', () => {
+  it('never issues overlapping detail requests when the backend is slower than POLL_MS', async () => {
+    vi.useFakeTimers();
+    // Every GET hangs: without a guard, setInterval would stack one more
+    // request every 5 seconds for the whole 10-minute deadline.
+    let resolveGet: ((v: unknown) => void) | null = null;
+    vi.mocked(http.get).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveGet = resolve;
+        }) as never,
+    );
+
+    const { container } = render(<ContentUploader />);
+    selectVideo(container);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The immediate tick fired exactly one request.
+    expect(http.get).toHaveBeenCalledTimes(1);
+
+    // Six poll intervals pass with that request still unanswered.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 6);
+    });
+    expect(http.get).toHaveBeenCalledTimes(1);
+
+    // Once it answers, the next interval is free to fire again.
+    await act(async () => {
+      resolveGet?.({ data: { id: 123, status: 'UPLOADED' } });
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    });
+    expect(http.get).toHaveBeenCalledTimes(2);
   });
 });
 

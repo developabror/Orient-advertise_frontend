@@ -60,7 +60,11 @@ export const AppLayout = () => {
         incidentId: id,
         deviceId: String(e.deviceId),
         message: e.description,
-        occurredAt: e.openedAt,
+        // `openedAt` is nullable on the wire (the broadcaster renders an
+        // explicit null). The alert store sorts on this string, so coalesce
+        // to '' — an undated alert sorts last rather than corrupting the
+        // comparison. Never fabricate a timestamp here.
+        occurredAt: e.openedAt ?? '',
       });
       const now = Date.now();
       if (now - lastToastAt >= INCIDENT_TOAST_THROTTLE_MS) {

@@ -16,6 +16,8 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@yume-chan/scrcpy": "2.3.0",
+    "@yume-chan/scrcpy-decoder-webcodecs": "2.5.3",
     "axios": "^1.16.0",
     "chart.js": "^4.5.1",
     "i18next": "^23.16.8",

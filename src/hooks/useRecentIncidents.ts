@@ -108,7 +108,10 @@ const incidentFromEvent = (e: IncidentCriticalEvent): Incident => ({
   deviceId: String(e.deviceId),
   // Facility isn't carried by the event; placeholder until next poll fills it.
   facility: '—',
-  occurredAt: e.openedAt,
+  // `openedAt` is nullable on the wire (the broadcaster renders an explicit
+  // null); the REST-sanitised rows use '' for an unknown timestamp, so match
+  // that rather than widening the row type.
+  occurredAt: e.openedAt ?? '',
 });
 
 export const useRecentIncidents = (): RecentIncidentsState => {

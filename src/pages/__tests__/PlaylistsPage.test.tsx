@@ -17,6 +17,16 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+
+// The content picker links to /content when non-READY files are hidden from
+// it, so the page now needs a Router context in tests.
+const renderPage = () =>
+  render(
+    <MemoryRouter>
+      <PlaylistsPage />
+    </MemoryRouter>,
+  );
 
 // useRole gates every mutation control (drag handle, Move buttons, tabIndex).
 // Pin it to 'admin' so canMutate is true and the reorder affordances render.
@@ -112,7 +122,7 @@ const detail = () => ({
 // Open the drawer for the single seeded playlist and wait until its item list
 // (the reorderable listbox) is on screen.
 const openDrawer = async () => {
-  render(<PlaylistsPage />);
+  renderPage();
   fireEvent.click(await screen.findByText('Morning Loop'));
   await screen.findByRole('option', { name: /Clip A — position 1 of 3/i });
 };
@@ -245,11 +255,14 @@ describe('PlaylistsPage — content picker projectId guard', () => {
   // sort triple is also caught.
   const PAGEABLE = { page: 0, size: 50, sort: 'name,asc' };
 
+  // Opening the picker issues THREE calls: the READY page that fills the list
+  // (always first, asserted below via mock.calls[0]) plus two size-1 probes
+  // whose totalElements feed the "N files are still being processed" hint.
   const openAddItemPicker = async () => {
     await openDrawer();
     fireEvent.click(screen.getByRole('button', { name: '+ Add item' }));
     await waitFor(() => {
-      expect(listContent).toHaveBeenCalledTimes(1);
+      expect(listContent).toHaveBeenCalledTimes(3);
     });
   };
 
@@ -314,7 +327,7 @@ describe('PlaylistsPage — dwell-time editor', () => {
   });
 
   const open = async () => {
-    render(<PlaylistsPage />);
+    renderPage();
     fireEvent.click(await screen.findByText('Morning Loop'));
     await screen.findByLabelText('Dwell time in seconds for Poster');
   };
@@ -411,7 +424,7 @@ describe('PlaylistsPage — add image requires a dwell time', () => {
   });
 
   const openPicker = async () => {
-    render(<PlaylistsPage />);
+    renderPage();
     fireEvent.click(await screen.findByText('Morning Loop'));
     await screen.findByRole('option', { name: /Clip A — position 1 of 3/i });
     fireEvent.click(screen.getByRole('button', { name: '+ Add item' }));
@@ -433,5 +446,90 @@ describe('PlaylistsPage — add image requires a dwell time', () => {
     await waitFor(() => {
       expect(addPlaylistItem).toHaveBeenCalledWith(10, { contentFileId: 501, durationSeconds: 12 });
     });
+  });
+});
+
+// §6 — the picker filters server-side on status READY, so content that is
+// still processing simply is NOT in the list. An operator who uploaded a file
+// two minutes ago and cannot find it has nothing on screen connecting the two.
+// The hint names the gap; the READY filter itself is unchanged.
+describe('PlaylistsPage — picker explains missing non-READY content', () => {
+  // listContent is called three times on open: the READY page first, then the
+  // UPLOADED and TRANSCODING size-1 probes whose totalElements feed the hint.
+  const withPendingCounts = (uploaded, transcoding) => {
+    vi.mocked(listContent).mockImplementation((filters) => {
+      if (filters.status === 'UPLOADED') {
+        return Promise.resolve({ ...CONTENT_PAGE, totalElements: uploaded });
+      }
+      if (filters.status === 'TRANSCODING') {
+        return Promise.resolve({ ...CONTENT_PAGE, totalElements: transcoding });
+      }
+      return Promise.resolve(CONTENT_PAGE);
+    });
+  };
+
+  const openPicker = async () => {
+    await openDrawer();
+    fireEvent.click(screen.getByRole('button', { name: '+ Add item' }));
+    await waitFor(() => {
+      expect(listContent).toHaveBeenCalledTimes(3);
+    });
+  };
+
+  it('names how many files are still processing and links to the content library', async () => {
+    withPendingCounts(1, 1);
+
+    await openPicker();
+
+    expect(
+      await screen.findByText('2 files are still being processed and cannot be added yet.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open the content library' })).toHaveAttribute(
+      'href',
+      '/content',
+    );
+  });
+
+  it('uses the singular form for a single pending file', async () => {
+    withPendingCounts(1, 0);
+
+    await openPicker();
+
+    expect(
+      await screen.findByText('1 file is still being processed and cannot be added yet.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows no hint when nothing is pending', async () => {
+    withPendingCounts(0, 0);
+
+    await openPicker();
+
+    expect(screen.queryByText(/still being processed/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open the content library' })).not.toBeInTheDocument();
+  });
+
+  it('still keeps the picker usable when the probes fail', async () => {
+    // The hint is an explanation, not a dependency — a failing probe must not
+    // take the picker down with it.
+    vi.mocked(listContent).mockImplementation((filters) =>
+      filters.status === 'READY'
+        ? Promise.resolve(CONTENT_PAGE)
+        : Promise.reject(new Error('probe blew up')),
+    );
+
+    await openPicker();
+
+    expect(await screen.findByText('No READY content available.')).toBeInTheDocument();
+    expect(screen.queryByText(/still being processed/)).not.toBeInTheDocument();
+  });
+
+  it('does NOT widen the picker query — it still asks the server for READY only', async () => {
+    withPendingCounts(3, 0);
+
+    await openPicker();
+
+    const [readyFilters] = vi.mocked(listContent).mock.calls[0];
+    expect(readyFilters.status).toBe('READY');
   });
 });

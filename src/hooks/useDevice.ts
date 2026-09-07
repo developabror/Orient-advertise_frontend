@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { http } from '@api/http';
 import { reconcileStatus, type DeviceStatus } from '@api/deviceStatus';
+import type { RemoteCapability } from '@api/resources/remoteControl';
 
 export interface DevicePlaylistItem {
   readonly id: string;
@@ -41,6 +42,20 @@ export interface DeviceDetail {
   readonly lastSeen: string | null;
   readonly status: DeviceDetailStatus;
   readonly activePlaylist: DevicePlaylist | null;
+  /**
+   * Last remote-control capability the device reported on its heartbeat.
+   *
+   * **Null today for every device**: the backend stores it on `Device`
+   * (`remote_supported`, …) but does not yet project it onto
+   * `GET /api/devices/{id}` — it only appears on the remote-session response.
+   * Parsed here anyway so the Connect button's `supported === false` check
+   * starts disabling the moment the backend adds the field, with no frontend
+   * change (contract §8: the capability block must not need one).
+   *
+   * Null therefore means **unknown**, never "unsupported" — the viewer's 422
+   * path is what actually rejects a box that can't do this.
+   */
+  readonly remoteCapability: RemoteCapability | null;
 }
 
 export type DeviceFetchState =
@@ -56,6 +71,25 @@ const safeNumber = (value: unknown, fallback = 0): number => {
 
 const numOrNull = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+// Liberal on read, like the rest of this file: a malformed block parses to
+// null (= unknown) rather than failing the device load. Losing a tooltip is
+// cheaper than losing the page.
+const sanitizeRemoteCapability = (value: unknown): RemoteCapability | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.supported !== 'boolean') return null;
+  const input =
+    v.input === 'ROOT' || v.input === 'ACCESSIBILITY' || v.input === 'NONE' ? v.input : 'NONE';
+  return {
+    supported: v.supported,
+    input,
+    transport: v.transport === 'SCRCPY_WS' ? 'SCRCPY_WS' : 'NONE',
+    maxWidth: numOrNull(v.maxWidth),
+    maxHeight: numOrNull(v.maxHeight),
+    reportedAt: typeof v.reportedAt === 'string' ? v.reportedAt : null,
+  };
+};
 
 const idStr = (v: unknown): string | null => {
   if (typeof v === 'string' && v !== '') return v;
@@ -145,6 +179,7 @@ const sanitizeDevice = (value: unknown): DeviceDetail | null => {
     // day the backend serves a unified computedStatus on detail.
     status: reconcileStatus(v.computedStatus ?? v.status, lastSeen),
     activePlaylist: null,
+    remoteCapability: sanitizeRemoteCapability(v.remoteCapability),
   };
 };
 

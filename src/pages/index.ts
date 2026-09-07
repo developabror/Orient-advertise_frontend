@@ -9,6 +9,10 @@ export { UserAccessPage } from './UserAccessPage';
 export { OperatorContentAccessPage } from './OperatorContentAccessPage';
 export { DevicesPage } from './DevicesPage';
 export { DeviceDetailPage } from './DeviceDetailPage';
+// DeviceRemotePage is deliberately NOT exported here. It is code-split in
+// App.tsx via a direct dynamic import; re-exporting it from this barrel would
+// pull its scrcpy/WebCodecs dependencies back into the main chunk and undo the
+// split. Import it from './DeviceRemotePage' directly if you ever need it.
 export { ContentPage } from './ContentPage';
 export { IncidentsPage } from './IncidentsPage';
 export { EventsPage } from './EventsPage';

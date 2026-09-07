@@ -133,7 +133,10 @@ const incidentFromEvent = (e: IncidentCriticalEvent): FullIncident => ({
   deviceId: String(e.deviceId),
   // Facility isn't carried by the event payload; '—' until the next refetch.
   facility: '—',
-  occurredAt: e.openedAt,
+  // `openedAt` is nullable on the wire (the broadcaster renders an explicit
+  // null); the REST-sanitised rows use '' for an unknown timestamp, so match
+  // that rather than widening the row type.
+  occurredAt: e.openedAt ?? '',
   status: 'open',
   message: e.description,
 });

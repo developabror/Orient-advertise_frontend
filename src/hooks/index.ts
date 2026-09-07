@@ -30,7 +30,7 @@ export type {
   DeviceEventsState,
   EventPriority,
 } from './useDeviceEvents';
-export { useContentItems } from './useContentItems';
+export { useContentItems, isRowStalled } from './useContentItems';
 export type {
   ContentItem,
   ContentStatus,
