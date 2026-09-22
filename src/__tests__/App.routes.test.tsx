@@ -1,10 +1,14 @@
-// Route-guard tests for the remote viewer.
+// Route-guard tests.
 //
-// `/devices/:id` deliberately admits `advertiser`, and the remote viewer sits
-// one path segment deeper — so the obvious mistake is to nest the new route in
-// that same block and hand an advertiser a live screen of a customer's box
-// (contract §7 rule 6). That mistake is invisible in review and silent at
-// runtime, which is why it gets its own test.
+// The remote viewer sits one path segment below `/devices/:id`, whose block
+// admits `viewer` — so the obvious mistake is to nest it in that same block and
+// hand a viewer a live screen of a customer's box (contract §7 rule 6). That
+// mistake is invisible in review and silent at runtime, which is why it gets
+// its own test.
+//
+// The fleet views (FE-19) must admit exactly the roles the backend serves:
+// ADMIN/OPERATOR/VIEWER. A viewer used to be bounced to /forbidden from a
+// sidebar link, and an advertiser was let into pages that only ever 403.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -35,12 +39,20 @@ vi.mock('@api/notify', () => ({
   notify: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 
-// Only the two pages these routes resolve to are stubbed; ForbiddenPage and
-// the layout stay real, because where the redirect actually lands is the
-// assertion.
+// Only the pages these routes resolve to are stubbed; ProtectedRoute,
+// ForbiddenPage and the layout stay real, because where the redirect actually
+// lands is the assertion.
 vi.mock('@pages', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@pages')>();
-  return { ...actual, DeviceDetailPage: () => <div>device detail</div> };
+  return {
+    ...actual,
+    DeviceDetailPage: () => <div>device detail</div>,
+    DevicesPage: () => <div>devices list</div>,
+    IncidentsPage: () => <div>incidents page</div>,
+    EventsPage: () => <div>events page</div>,
+    ReportsPage: () => <div>reports page</div>,
+    DevicePlaybackReportPage: () => <div>playback report</div>,
+  };
 });
 // Mocked at its own module path, not through `@pages`: the remote viewer is
 // code-split in App.tsx via a direct dynamic import (see the comment there),
@@ -105,10 +117,28 @@ describe('/devices/:id/remote', () => {
   });
 });
 
-describe('/devices/:id', () => {
-  it('still admits an advertiser — the new guard must not narrow the existing route', async () => {
-    renderAs('advertiser', '/devices/12');
+const FLEET_ROUTES: readonly (readonly [path: string, page: string])[] = [
+  ['/devices', 'devices list'],
+  ['/devices/12', 'device detail'],
+  ['/incidents', 'incidents page'],
+  ['/events', 'events page'],
+  ['/reports', 'reports page'],
+  ['/reports/playback', 'playback report'],
+];
 
-    expect(await screen.findByText('device detail')).toBeInTheDocument();
+describe.each(FLEET_ROUTES)('%s', (path, page) => {
+  it.each(['admin', 'operator', 'viewer'] as const)('admits %s', async (role) => {
+    renderAs(role, path);
+
+    expect(await screen.findByText(page)).toBeInTheDocument();
+  });
+
+  it('redirects an advertiser to /forbidden — the backend only ever answers it 403', async () => {
+    renderAs('advertiser', path);
+
+    await waitFor(() => {
+      expect(screen.getByText('403 — Forbidden')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(page)).not.toBeInTheDocument();
   });
 });

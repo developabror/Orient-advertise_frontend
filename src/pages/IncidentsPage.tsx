@@ -8,6 +8,7 @@ import { extractApiMessage } from '@api';
 import { markErrorHandled } from '@api/errorDialog';
 import { useIncidentStats } from '@hooks/useIncidentStats';
 import { useIncidents, type IncidentFilter } from '@hooks/useIncidents';
+import { useRole } from '@hooks/useRole';
 
 const TABS: readonly { value: IncidentFilter; labelKey: string }[] = [
   { value: 'all', labelKey: 'tabAll' },
@@ -25,6 +26,9 @@ const parseFilter = (raw: string | null): IncidentFilter => {
 
 export const IncidentsPage = () => {
   const { t } = useTranslation();
+  // Acknowledge/resolve are ADMIN/OPERATOR on the backend; a viewer reads the list only.
+  const role = useRole();
+  const canAct = role === 'admin' || role === 'operator';
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = parseFilter(searchParams.get('tab'));
 
@@ -238,7 +242,7 @@ export const IncidentsPage = () => {
                   <TimeAgo date={inc.occurredAt} />
                 </span>
                 <div className="oa-incident-row__actions">
-                  {inc.status === 'open' && (
+                  {canAct && inc.status === 'open' && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -251,7 +255,7 @@ export const IncidentsPage = () => {
                       {t('incidentsPage.acknowledge')}
                     </Button>
                   )}
-                  {inc.status !== 'resolved' && (
+                  {canAct && inc.status !== 'resolved' && (
                     <Button
                       variant="primary"
                       size="sm"

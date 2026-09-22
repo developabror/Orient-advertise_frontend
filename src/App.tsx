@@ -54,23 +54,23 @@ export const App = () => (
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="/my-content/:contentId" element={<AdvertiserContentDetailPage />} />
-        <Route path="/incidents" element={<IncidentsPage />} />
-        <Route path="/events" element={<EventsPage />} />
-        <Route path="/reports" element={<ReportsPage />} />
 
-        {/* Playback report — backend allows VIEWER (200); only ADVERTISER is 403. */}
+        {/* The fleet views: the backend serves devices, incidents, events and
+            reports to ADMIN/OPERATOR/VIEWER and answers ADVERTISER with 403, so
+            the routes mirror that — an advertiser lands on /forbidden instead of
+            a page of errors, and a viewer can open what the sidebar offers. */}
         <Route element={<ProtectedRoute roles={['admin', 'operator', 'viewer']} />}>
-          <Route path="/reports/playback" element={<DevicePlaybackReportPage />} />
-        </Route>
-
-        <Route element={<ProtectedRoute roles={['admin', 'operator', 'advertiser']} />}>
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/devices/:id" element={<DeviceDetailPage />} />
+          <Route path="/incidents" element={<IncidentsPage />} />
+          <Route path="/events" element={<EventsPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/reports/playback" element={<DevicePlaybackReportPage />} />
         </Route>
         <Route element={<ProtectedRoute roles={['admin', 'operator']} />}>
           {/* Remote viewer sits in the admin/operator block, NOT beside
-              /devices/:id above — that block admits `advertiser`, who must
-              never reach a live screen (contract §7 rule 6). */}
+              /devices/:id above — that block admits `viewer`, and only
+              admins and operators may reach a live screen (contract §7 rule 6). */}
           <Route
             path="/devices/:id/remote"
             element={
