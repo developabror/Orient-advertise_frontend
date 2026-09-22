@@ -7,6 +7,7 @@ import {
   updateSchedule,
   type ScheduleSummary,
 } from '@api/resources/schedules';
+import { tashkentYmd } from '@/lib/timezone';
 
 export interface ContentSchedule {
   readonly id: string;
@@ -57,7 +58,9 @@ const formatRepeatEnd = (iso: string | null): string => {
   // recurrence stop", not the wall-clock minute.
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  return ` until ${date.toISOString().slice(0, 10)}`;
+  // Tashkent calendar day: toISOString() reads the UTC one, which after
+  // 19:00 local is already tomorrow's date.
+  return ` until ${tashkentYmd(date)}`;
 };
 
 const toContentSchedule = (s: ScheduleSummary): ContentSchedule => ({

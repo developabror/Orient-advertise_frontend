@@ -9,6 +9,7 @@
 // resource layers MUST NOT set the Authorization header themselves.
 
 import { http } from '../http';
+import { tashkentDayEndUtc, tashkentDayStartUtc } from '@/lib/timezone';
 
 export type ReportScopeType = 'DEVICE' | 'REGION' | 'DEVICE_GROUP' | 'FACILITY' | 'PROJECT';
 
@@ -115,8 +116,8 @@ export const getDevicePlaybackReport = async (
 ): Promise<PlaybackReportResponse> => {
   const { data } = await http.get<unknown>(`/api/stats/device/${String(deviceId)}`, {
     params: {
-      from: `${range.from}T00:00:00Z`,
-      to: `${range.to}T23:59:59Z`,
+      from: tashkentDayStartUtc(range.from),
+      to: tashkentDayEndUtc(range.to),
     },
     // Only attach `signal` when present — `exactOptionalPropertyTypes` rejects
     // an explicit `signal: undefined`.

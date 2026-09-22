@@ -11,7 +11,7 @@
 //   3. it is absent entirely for a role the backend would 403.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { ContentFileSummary } from '@api/resources/content';
 
@@ -24,9 +24,36 @@ vi.mock('@hooks/useRole', () => ({
 vi.mock('@api/resources/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@api/resources/content')>()),
   listContent: vi.fn(),
+  getContentSummary: vi.fn(),
   retranscodeContent: vi.fn(),
   softDeleteContent: vi.fn(),
 }));
+
+// COLLECT the handlers rather than keeping the last one: this page mounts the
+// real <ContentUploader> AND the real useContentItems, and both subscribe to
+// CONTENT_STATUS_CHANGE. A single-slot mock would test only the uploader.
+const ws = vi.hoisted(() => ({ handlers: [] as ((e: unknown) => void)[] }));
+
+vi.mock('@hooks/useWsEvent', async () => {
+  const { useEffect, useRef } = await import('react');
+  return {
+    useWsEvent: (type: string, handler: (e: unknown) => void) => {
+      const ref = useRef(handler);
+      ref.current = handler;
+      useEffect(() => {
+        if (type !== 'CONTENT_STATUS_CHANGE') return;
+        const wrapper = (e: unknown): void => {
+          ref.current(e);
+        };
+        ws.handlers.push(wrapper);
+        return () => {
+          const i = ws.handlers.indexOf(wrapper);
+          if (i >= 0) ws.handlers.splice(i, 1);
+        };
+      }, [type]);
+    },
+  };
+});
 
 vi.mock('@api/http', () => ({
   http: { get: vi.fn(), post: vi.fn(), delete: vi.fn(), patch: vi.fn() },
@@ -36,7 +63,8 @@ vi.mock('@api/notify', () => ({
   notify: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-import { listContent, retranscodeContent } from '@api/resources/content';
+import { getContentSummary, listContent, retranscodeContent } from '@api/resources/content';
+import { http } from '@api/http';
 import { ContentPage } from '../ContentPage';
 
 const NOW = Date.parse('2026-09-06T12:00:00Z');
@@ -98,6 +126,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.setSystemTime(NOW);
   roleHolder.role = 'operator';
+  ws.handlers.length = 0;
   vi.mocked(listContent).mockResolvedValue({
     content: [stuckRow()],
     totalElements: 1,
@@ -105,6 +134,19 @@ beforeEach(() => {
     number: 0,
     size: 24,
   } as never);
+  // Retry now reconciles the row against the server (the retranscode CAS
+  // commits before the 200), so the single-row GET has to answer with what
+  // the server actually committed. The LIST stub deliberately keeps
+  // returning the original 30-minute-old UPLOADED row — the point is that
+  // the card converges on the row fetch, not on a refetched listing.
+  vi.mocked(getContentSummary).mockResolvedValue(
+    stuckRow({
+      status: 'TRANSCODING',
+      transcodeStartedAt: minutesAgo(0),
+      updatedAt: minutesAgo(0),
+      stalled: false,
+    }) as never,
+  );
 });
 
 describe('ContentPage — Retry', () => {
@@ -189,5 +231,169 @@ describe('ContentPage — Retry', () => {
 
     renderPage();
     expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+});
+
+describe('ContentPage — schedules', () => {
+  it('offers no Schedules action: dayparting is not applied to playback yet (LOGIC-04)', async () => {
+    roleHolder.role = 'admin';
+    vi.mocked(listContent).mockResolvedValue({
+      content: [stuckRow({ status: 'READY', durationSeconds: 15 })],
+      totalElements: 1,
+      totalPages: 1,
+      number: 0,
+      size: 24,
+    } as never);
+
+    renderPage();
+
+    // A READY card is exactly where ContentCard would render the Schedules button.
+    expect(await screen.findByText('promo.mp4')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Schedules' })).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live status on the grid.
+//
+// The operator's report, in three parts:
+//   1. an upload does not appear until the page is reloaded;
+//   2. after the reload it reads "Transcoding" (correct);
+//   3. when transcoding finishes it does not read "Ready" until a SECOND
+//      reload.
+//
+// (1) and (3) are the same defect seen from two ends: the live feed had
+// exactly one subscriber, `ContentUploader`, and it matched frames against
+// its own per-mount state. A row it did not upload in this render — because
+// the page reloaded, or because the row is only just being announced — could
+// not be matched, so the frame was discarded and nothing else was listening.
+// ---------------------------------------------------------------------------
+
+const makeFileList = (files: readonly File[]): FileList =>
+  ({
+    length: files.length,
+    item: (i: number) => files[i] ?? null,
+    [Symbol.iterator]: function* () {
+      for (const f of files) yield f;
+    },
+  }) as unknown as FileList;
+
+const selectVideo = (input: HTMLInputElement, name: string): void => {
+  const file = new File(['video-bytes'], name, { type: 'video/mp4' });
+  Object.defineProperty(input, 'files', { value: makeFileList([file]), configurable: true });
+  fireEvent.change(input);
+};
+
+const fileInputs = (): readonly HTMLInputElement[] =>
+  [...document.querySelectorAll('input[type="file"]')] as HTMLInputElement[];
+
+const cardFor = (filename: string): Element | null =>
+  [...document.querySelectorAll('.oa-content-card')].find(
+    (el) => el.querySelector('.oa-content-card__filename')?.textContent === filename,
+  ) ?? null;
+
+const emitWs = (event: Record<string, unknown>): void => {
+  act(() => {
+    for (const handler of [...ws.handlers]) handler(event);
+  });
+};
+
+describe('ContentPage — a new upload reaches the grid without a reload', () => {
+  it('puts a card in the grid the moment the upload is accepted', async () => {
+    // Symptom 1. A 202 is the only moment anything knows the id exists: the
+    // row is UPLOADED, and UPLOADED is the one status the live feed never
+    // broadcasts.
+    vi.mocked(http.post).mockResolvedValue({
+      data: { fileId: 99, status: 'UPLOADED' },
+    } as never);
+    vi.mocked(http.get).mockResolvedValue({
+      data: { id: 99, status: 'UPLOADED' },
+    } as never);
+    vi.mocked(getContentSummary).mockResolvedValue(
+      stuckRow({ id: 99, name: 'new.mp4', status: 'UPLOADED', createdAt: minutesAgo(0) }) as never,
+    );
+
+    renderPage();
+    await screen.findByText('Stuck — not processed.');
+    const listCallsBefore = vi.mocked(listContent).mock.calls.length;
+
+    const input = fileInputs()[0];
+    if (input === undefined) throw new Error('uploader file input not rendered');
+    selectVideo(input, 'new.mp4');
+
+    // A real grid card, not the uploader's own transient progress row.
+    await waitFor(() => {
+      expect(cardFor('new.mp4')).not.toBeNull();
+    });
+    expect(getContentSummary).toHaveBeenCalledWith(99, expect.anything());
+    // One targeted row fetch — never a re-listing. Multiplied across a fleet,
+    // a refetch per upload is a stampede.
+    expect(vi.mocked(listContent).mock.calls).toHaveLength(listCallsBefore);
+  });
+
+  it('announces the urgent upload path too', async () => {
+    vi.mocked(http.post).mockResolvedValue({
+      data: { fileId: 77, webSocketPush: null },
+    } as never);
+    vi.mocked(getContentSummary).mockResolvedValue(
+      stuckRow({ id: 77, name: 'urgent.mp4', status: 'UPLOADED', createdAt: minutesAgo(0) }) as never,
+    );
+
+    renderPage();
+    await screen.findByText('Stuck — not processed.');
+
+    fireEvent.click(screen.getByRole('button', { name: /Urgent upload/ }));
+    const inputs = fileInputs();
+    // The modal's input is the one that appears after the page's own.
+    const urgentInput = inputs[inputs.length - 1];
+    if (urgentInput === undefined) throw new Error('urgent file input not rendered');
+    selectVideo(urgentInput, 'urgent.mp4');
+
+    await waitFor(() => {
+      expect(getContentSummary).toHaveBeenCalledWith(77, expect.anything());
+    });
+    await waitFor(() => {
+      expect(cardFor('urgent.mp4')).not.toBeNull();
+    });
+  });
+
+  it('flips a card this page never uploaded — the post-reload scenario', async () => {
+    // Symptom 3, exactly as it reaches an operator who pressed F5 while the
+    // file was transcoding: nothing in this render uploaded row 41, there is
+    // no poller, and the frame still has to land.
+    vi.mocked(listContent).mockResolvedValue({
+      content: [stuckRow({ status: 'TRANSCODING', updatedAt: minutesAgo(1), stalled: false })],
+      totalElements: 1,
+      totalPages: 1,
+      number: 0,
+      size: 24,
+    } as never);
+    vi.mocked(getContentSummary).mockResolvedValue(
+      stuckRow({
+        status: 'READY',
+        durationSeconds: 12,
+        thumbnailUrl: 'https://x/t.jpg',
+        updatedAt: minutesAgo(0),
+        stalled: false,
+      }) as never,
+    );
+
+    renderPage();
+    await waitFor(() => {
+      expect(within(cardBadges()).getByText('Transcoding')).toBeInTheDocument();
+    });
+
+    emitWs({ type: 'CONTENT_STATUS_CHANGE', contentId: 41, status: 'READY', invalidReason: null });
+
+    await waitFor(() => {
+      expect(within(cardBadges()).getByText('Ready')).toBeInTheDocument();
+    });
+    // And it picked up what the frame does not carry.
+    await waitFor(() => {
+      expect(document.querySelector('img.oa-content-card__thumb-img')).toHaveAttribute(
+        'src',
+        'https://x/t.jpg',
+      );
+    });
   });
 });

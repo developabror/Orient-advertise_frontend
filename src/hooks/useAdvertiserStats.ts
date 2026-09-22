@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { http } from '@api/http';
 import { useAuth } from './useAuth';
+import { tashkentDayEndUtc, tashkentDayStartUtc } from '@/lib/timezone';
 
 export interface AdvertiserContentItem {
   readonly id: string;
@@ -109,8 +110,8 @@ export const useAdvertiserStats = (filter: AdvertiserStatsFilter): UseAdvertiser
         //    content. Spec doesn't expose a "stats for all my content" rollup,
         //    so this is the cleanest approximation. allSettled so a single
         //    flaky stat call doesn't sink the whole dashboard.
-        const fromIso = `${filter.dateFrom}T00:00:00Z`;
-        const toIso = `${filter.dateTo}T23:59:59Z`;
+        const fromIso = tashkentDayStartUtc(filter.dateFrom);
+        const toIso = tashkentDayEndUtc(filter.dateTo);
         const results = await Promise.allSettled(
           items.map((c) =>
             http.get<unknown>(`/api/stats/content/${encodeURIComponent(c.id)}`, {

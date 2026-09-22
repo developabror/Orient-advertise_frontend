@@ -60,6 +60,7 @@ export {
 } from './resources/incidents';
 export type { IncidentDto } from './resources/incidents';
 export {
+  allowReregistration,
   clearDeviceVolume,
   deleteDevice,
   getDevice,
@@ -74,6 +75,7 @@ export type {
   DeviceListFilters,
   DeviceListItem,
   DeviceStatus,
+  ReregistrationWindow,
 } from './resources/devices';
 // Remote control — control plane only. The relay socket itself lives in
 // `./relayClient`, deliberately NOT re-exported here: it is not an API
@@ -202,6 +204,7 @@ export type { MeResponse } from './resources/me';
 export {
   getContent,
   getContentStreamUrl,
+  getContentSummary,
   listContent,
   retranscodeContent,
   setContentProject,

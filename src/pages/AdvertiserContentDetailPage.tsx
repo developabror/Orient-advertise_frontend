@@ -10,6 +10,7 @@ import { useAdvertiserContentDetail } from '@hooks/useAdvertiserContentDetail';
 import { useAdvertiserContentPlays, type PlayTimestamp } from '@hooks/useAdvertiserContentPlays';
 import type { PerDeviceRow } from '@hooks/useAdvertiserContentDetail';
 import { useRole } from '@hooks/useRole';
+import { tashkentDayEndUtc, tashkentDayStartUtc, tashkentPresetRange } from '@/lib/timezone';
 
 type TimeRange = '7d' | '30d' | 'custom';
 
@@ -19,21 +20,10 @@ const TIMESTAMPS_MAX_DAYS = 30;
 
 const isTimeRange = (v: string): v is TimeRange => v === '7d' || v === '30d' || v === 'custom';
 
-const formatYmd = (d: Date): string => {
-  const yyyy = String(d.getUTCFullYear());
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-};
-
-const presetRange = (preset: '7d' | '30d'): { dateFrom: string; dateTo: string } => {
-  const now = new Date();
-  const days = preset === '7d' ? 7 : 30;
-  return {
-    dateFrom: formatYmd(new Date(now.getTime() - days * MS_PER_DAY)),
-    dateTo: formatYmd(now),
-  };
-};
+// Presets run on the TASHKENT calendar, not the host's. Built from getUTC*
+// parts, "today" stayed on yesterday's date until 05:00 local (FE-08).
+const presetRange = (preset: '7d' | '30d'): { dateFrom: string; dateTo: string } =>
+  tashkentPresetRange(preset === '7d' ? 7 : 30);
 
 interface ResolvedFilter {
   readonly timeRange: TimeRange;
@@ -236,8 +226,8 @@ export const AdvertiserContentDetailPage = () => {
         const response = await http.get(`/api/reports/export`, {
           params: {
             type: 'STATS',
-            from: `${active.dateFrom}T00:00:00Z`,
-            to: `${active.dateTo}T23:59:59Z`,
+            from: tashkentDayStartUtc(active.dateFrom),
+            to: tashkentDayEndUtc(active.dateTo),
           },
           responseType: 'blob',
           // Server-side workbook generation can take a while on long ranges

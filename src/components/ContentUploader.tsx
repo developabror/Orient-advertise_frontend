@@ -152,9 +152,17 @@ interface ContentUploaderProps {
    * being called more than once per upload.
    */
   onItemReady?: () => void;
+  /**
+   * Fires the moment POST /api/content/upload is accepted (202), with the
+   * new row's server id. The Content page uses this to pull the brand-new
+   * row into the grid immediately — the row is UPLOADED, and UPLOADED is
+   * never broadcast over CONTENT_STATUS_CHANGE, so nothing else can
+   * announce it. Best-effort; listeners must tolerate repeats.
+   */
+  onUploadAccepted?: (contentId: string) => void;
 }
 
-export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
+export const ContentUploader = ({ onItemReady, onUploadAccepted }: ContentUploaderProps = {}) => {
   const { t } = useTranslation();
   const [entries, dispatch] = useReducer(reducer, [] as readonly UploadEntry[]);
   const [dragOver, setDragOver] = useState(false);
@@ -168,6 +176,10 @@ export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
   useEffect(() => {
     onItemReadyRef.current = onItemReady;
   }, [onItemReady]);
+  const onUploadAcceptedRef = useRef(onUploadAccepted);
+  useEffect(() => {
+    onUploadAcceptedRef.current = onUploadAccepted;
+  }, [onUploadAccepted]);
 
   const stopPolling = (localId: string): void => {
     const t = timersRef.current.get(localId);
@@ -307,6 +319,10 @@ export const ContentUploader = ({ onItemReady }: ContentUploaderProps = {}) => {
           contentId,
         },
       });
+      // Announce the row before the first poll tick. This is the only moment
+      // anything knows the id exists: the row is UPLOADED, and UPLOADED is
+      // the one status the live feed never broadcasts.
+      onUploadAcceptedRef.current?.(contentId);
       startPolling(localId, contentId);
     } catch (err: unknown) {
       if (axios.isCancel(err) || controller.signal.aborted) return;

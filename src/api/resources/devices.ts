@@ -107,6 +107,14 @@ export interface DeviceDetail {
   readonly updatedAt: string;
   readonly deletedAt: string | null;
   readonly deleted: boolean;
+  // End of the admin-opened re-registration window (ISO-8601 instant); null
+  // when no window is open. Optional: absent on backends that predate it.
+  readonly reregistrationAllowedUntil?: string | null;
+}
+
+/** Response of POST /api/devices/{id}/reregistration-window. */
+export interface ReregistrationWindow {
+  readonly allowedUntil: string;
 }
 
 const numOrNull = (v: unknown): number | null => {
@@ -225,6 +233,29 @@ export const updateDeviceLocation = async (
  */
 export const deleteDevice = async (id: number): Promise<void> => {
   await http.delete(`/api/devices/${String(id)}`);
+};
+
+/**
+ * POST /api/devices/{id}/reregistration-window (no body). **ADMIN only.**
+ * Opens a 1-hour window during which the NEXT registration of this device's
+ * serial is issued a new token (the old one stops working) — the recovery path
+ * for a wiped/reinstalled box. Returns when the window closes.
+ *
+ * 403 (non-admin) is toasted by the global interceptor, like
+ * {@link deleteDevice}; 404 (unknown device) falls through for the caller to
+ * render inline. A 200 whose body lacks a string `allowedUntil` throws rather
+ * than handing the page an unchecked value.
+ */
+export const allowReregistration = async (id: number): Promise<ReregistrationWindow> => {
+  const { data } = await http.post<unknown>(`/api/devices/${String(id)}/reregistration-window`);
+  if (typeof data !== 'object' || data === null) {
+    throw new Error('Malformed reregistration-window response');
+  }
+  const { allowedUntil } = data as Record<string, unknown>;
+  if (typeof allowedUntil !== 'string') {
+    throw new Error('Malformed reregistration-window response');
+  }
+  return { allowedUntil };
 };
 
 /**

@@ -67,10 +67,12 @@ export interface CreateDraftRequest {
  *    not surfaced here — let the backend reject with 400).
  * - `replaceConflicting`: when `true`, the server atomically supersedes any
  *    CONFIRMED assignment(s) that overlap this draft's window/target instead
- *    of rejecting with a 409. This is the **atomic Replace** path; the FE
- *    falls back to cancel-then-reconfirm on a backend that doesn't honor it
- *    (still 409s). Destructive — only set after an explicit operator
- *    confirmation. An older backend ignores the unknown field.
+ *    of rejecting with a 409. This is the **atomic Replace** path — the only
+ *    one. The server supersedes only the **device-intersecting** part of a
+ *    conflicting assignment: devices outside the submitted scope keep the
+ *    content they already play (the predecessor is narrowed, not retired).
+ *    Destructive for the devices in scope — only set after an explicit
+ *    operator confirmation. An older backend ignores the unknown field.
  */
 export interface ConfirmAssignmentRequest {
   readonly excludedDeviceIds?: readonly number[];
@@ -104,6 +106,16 @@ export interface AssignmentConflict {
    * by `id`, never by this list.
    */
   readonly conflictingDeviceIds?: readonly number[];
+  /**
+   * How many devices would KEEP this assignment if the operator replaces —
+   * i.e. the devices it drives that lie outside the submitted scope, which the
+   * server leaves untouched by narrowing (not retiring) the predecessor.
+   * Present on a backend that ships partial-device supersede, absent on an
+   * older one. `0` and "unknown" are deliberately distinguishable: `0` means
+   * the predecessor is fully covered and really does go away, `undefined`
+   * means the server didn't say — so render nothing rather than guess.
+   */
+  readonly remainingDeviceCount?: number;
 }
 
 /**
@@ -162,6 +174,10 @@ export const parseOverlapDetails = (body: unknown): AssignmentOverlapDetails | n
         typeof c.endTime === 'string'
       ) {
         const conflictingDeviceIds = numberArrayOrUndefined(c.conflictingDeviceIds);
+        const remainingDeviceCount =
+          typeof c.remainingDeviceCount === 'number' && Number.isFinite(c.remainingDeviceCount)
+            ? c.remainingDeviceCount
+            : undefined;
         conflicts.push({
           id: c.id,
           startTime: c.startTime,
@@ -171,6 +187,7 @@ export const parseOverlapDetails = (body: unknown): AssignmentOverlapDetails | n
           ...(typeof c.playlistName === 'string' ? { playlistName: c.playlistName } : {}),
           ...(typeof c.status === 'string' ? { status: c.status } : {}),
           ...(conflictingDeviceIds !== undefined ? { conflictingDeviceIds } : {}),
+          ...(remainingDeviceCount !== undefined ? { remainingDeviceCount } : {}),
         });
       }
     }
@@ -273,10 +290,16 @@ export const confirmAssignment = async (
  * DELETE /api/assignments/{id} — cancel (soft-delete) an assignment.
  *
  * The backend transitions the assignment to CANCELLED rather than hard-deleting
- * it (audit trail). This is the prerequisite for **replacing an open-ended
- * ("forever") assignment**: the time-overlap guard blocks any new assignment to
- * the same target while a CONFIRMED one is live, so the operator must cancel the
- * existing assignment first.
+ * it (audit trail).
+ *
+ * **Whole-assignment operation.** There is no device scoping on this endpoint:
+ * cancelling stops the assignment for EVERY device it drives. It is therefore
+ * NOT the way to hand a subset of devices over to new content — doing that
+ * silently strips the playlist from every device the operator didn't select.
+ * To hand over only some devices, confirm the new assignment with
+ * `replaceConflicting: true` and let the backend narrow the predecessor
+ * (see {@link ConfirmAssignmentRequest}). Use cancel only when the operator
+ * really means "stop this assignment everywhere".
  *
  * 4xx fall through the global response interceptor (no toast), so the caller
  * surfaces the envelope message inline:

@@ -33,6 +33,13 @@ type UrgentState =
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * Fires the moment POST /api/content/upload?urgent=true is accepted, with
+   * the new row's server id. Same contract as `ContentUploader`'s — the row
+   * is UPLOADED, which the live feed never broadcasts, so without this the
+   * grid learns nothing about an urgent upload until the next refetch.
+   */
+  onUploadAccepted?: (contentId: string) => void;
 }
 
 const validateFile = (file: File, t: TFunction): string | null => {
@@ -73,7 +80,7 @@ const formatBytes = (bytes: number): string => {
   return `${value.toFixed(decimals)} ${units[unitIndex] ?? 'B'}`;
 };
 
-export const UrgentUploadModal = ({ isOpen, onClose }: Props) => {
+export const UrgentUploadModal = ({ isOpen, onClose, onUploadAccepted }: Props) => {
   const { t } = useTranslation();
   const [state, setState] = useState<UrgentState>({ kind: 'idle' });
   const [dragOver, setDragOver] = useState(false);
@@ -146,6 +153,7 @@ export const UrgentUploadModal = ({ isOpen, onClose }: Props) => {
         filename: file.name,
         notifiedDevices: sent,
       });
+      onUploadAccepted?.(String(data.fileId));
     } catch (err: unknown) {
       if (axios.isCancel(err) || controller.signal.aborted) return;
       // This modal renders the error inline, so claim it to stop the global

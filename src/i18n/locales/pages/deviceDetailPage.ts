@@ -80,6 +80,18 @@ const en = {
     'Device <mono>{{id}}</mono> will be removed from the fleet (soft-deleted on the server; its history is retained for audit).',
   toastDeleted: 'Device deleted.',
   errDelete: 'Failed to delete device.',
+
+  // Re-registration window (admin)
+  allowRereg: 'Allow re-registration',
+  reregAllowedUntil: 'Re-registration allowed until {{time}}',
+  reregTitle: 'Allow re-registration?',
+  reregMessage:
+    "The next time this device's serial number registers, it will be issued a new token and its current token will stop working.",
+  reregWindow: 'The window stays open for 1 hour.',
+  reregOnlineWarning:
+    '<s>This device is online.</s> It appears to be working normally, so this is usually not needed. While the window is open, whoever registers this serial number first takes over the device.',
+  toastReregAllowed: 'Re-registration allowed until {{time}}.',
+  errRereg: 'Failed to allow re-registration.',
 };
 
 export const dict = {
@@ -158,6 +170,17 @@ export const dict = {
       'Устройство <mono>{{id}}</mono> будет удалено из парка (мягкое удаление на сервере; история сохраняется для аудита).',
     toastDeleted: 'Устройство удалено.',
     errDelete: 'Не удалось удалить устройство.',
+
+    allowRereg: 'Разрешить повторную регистрацию',
+    reregAllowedUntil: 'Повторная регистрация разрешена до {{time}}',
+    reregTitle: 'Разрешить повторную регистрацию?',
+    reregMessage:
+      'При следующей регистрации устройства с этим серийным номером ему будет выдан новый токен, а текущий токен перестанет действовать.',
+    reregWindow: 'Разрешение действует 1 час.',
+    reregOnlineWarning:
+      '<s>Устройство сейчас в сети.</s> Похоже, оно работает нормально, поэтому обычно это не требуется. Пока разрешение действует, устройство перейдёт к тому, кто первым зарегистрируется с этим серийным номером.',
+    toastReregAllowed: 'Повторная регистрация разрешена до {{time}}.',
+    errRereg: 'Не удалось разрешить повторную регистрацию.',
   } satisfies typeof en,
   uz: {
     loadingDevice: 'Qurilma yuklanmoqda',
@@ -233,5 +256,16 @@ export const dict = {
       '<mono>{{id}}</mono> qurilmasi parkdan olib tashlanadi (serverda yumshoq oʻchiriladi; tarixi audit uchun saqlanadi).',
     toastDeleted: 'Qurilma oʻchirildi.',
     errDelete: 'Qurilmani oʻchirib boʻlmadi.',
+
+    allowRereg: 'Qayta roʻyxatdan oʻtishga ruxsat berish',
+    reregAllowedUntil: 'Qayta roʻyxatdan oʻtishga {{time}} gacha ruxsat berilgan',
+    reregTitle: 'Qayta roʻyxatdan oʻtishga ruxsat berilsinmi?',
+    reregMessage:
+      'Ushbu qurilmaning seriya raqami keyingi safar roʻyxatdan oʻtganda unga yangi token beriladi, joriy token esa amal qilishdan toʻxtaydi.',
+    reregWindow: 'Ruxsat 1 soat davomida amal qiladi.',
+    reregOnlineWarning:
+      '<s>Qurilma hozir onlayn.</s> U odatdagidek ishlayotganga oʻxshaydi, shuning uchun bu odatda kerak emas. Ruxsat amal qilib turganda, ushbu seriya raqamini birinchi boʻlib roʻyxatdan oʻtkazgan kishi qurilmani egallab oladi.',
+    toastReregAllowed: 'Qayta roʻyxatdan oʻtishga {{time}} gacha ruxsat berildi.',
+    errRereg: 'Qayta roʻyxatdan oʻtishga ruxsat berib boʻlmadi.',
   } satisfies typeof en,
 };

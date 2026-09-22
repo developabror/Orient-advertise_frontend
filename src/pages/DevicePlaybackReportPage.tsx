@@ -8,10 +8,10 @@ import {
 } from '@hooks/useDevicePlaybackReport';
 import type { PlaybackByContentRow } from '@api/resources/playbackReport';
 import { formatDuration, totalMinutes } from '@/utils/formatDuration';
+import { tashkentPresetRange } from '@/lib/timezone';
 
-const isoToday = (): string => new Date().toISOString().slice(0, 10);
-const isoDaysAgo = (n: number): string =>
-  new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+// Defaults follow the TASHKENT calendar. toISOString() reads the UTC day, so
+// between midnight and 05:00 local the page opened on yesterday (FE-08).
 
 /**
  * `/reports/playback` — pick a device + date range, see what it played (content
@@ -25,15 +25,23 @@ export const DevicePlaybackReportPage = () => {
 
   // Form state.
   const [deviceId, setDeviceId] = useState<number | null>(null);
-  const [dateFrom, setDateFrom] = useState<string>(isoDaysAgo(7));
-  const [dateTo, setDateTo] = useState<string>(isoToday());
+  // One atomic read: two separate `new Date()` calls straddling 19:00:00.000Z
+  // would land on different Tashkent days and open a 9-day window.
+  const [defaultRange] = useState(() => tashkentPresetRange(7));
+  const [dateFrom, setDateFrom] = useState<string>(defaultRange.dateFrom);
+  const [dateTo, setDateTo] = useState<string>(defaultRange.dateTo);
 
   // Applied filter (only set on Apply); null ⇒ hook inert.
   const [filter, setFilter] = useState<DevicePlaybackReportFilter | null>(null);
   const report = useDevicePlaybackReport(filter);
 
   // String compare is valid for YYYY-MM-DD; blocks the request client-side.
-  const rangeInvalid = dateFrom > dateTo;
+  // A CLEARED field has to be rejected explicitly: '' sorts before every date,
+  // so `'' > dateTo` is false and Apply would stay enabled — and an empty bound
+  // is not an error to the backend, it means "use the default window". The
+  // operator would get a report over a range they never asked for, with nothing
+  // on screen saying so.
+  const rangeInvalid = dateFrom === '' || dateTo === '' || dateFrom > dateTo;
   const canApply = deviceId !== null && !rangeInvalid;
 
   const onApply = (): void => {

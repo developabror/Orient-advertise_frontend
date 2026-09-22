@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../http', () => ({
   http: {
     get: vi.fn(),
+    post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
   },
@@ -12,6 +13,7 @@ vi.mock('../../http', () => ({
 
 import { http } from '../../http';
 import {
+  allowReregistration,
   clearDeviceVolume,
   deleteDevice,
   getDevice,
@@ -25,6 +27,7 @@ import {
 } from '../devices';
 
 const mockGet = http.get as unknown as ReturnType<typeof vi.fn>;
+const mockPost = http.post as unknown as ReturnType<typeof vi.fn>;
 const mockPut = http.put as unknown as ReturnType<typeof vi.fn>;
 const mockDelete = http.delete as unknown as ReturnType<typeof vi.fn>;
 
@@ -79,12 +82,14 @@ const validDetail = (over: Partial<DeviceDetail> = {}): DeviceDetail => ({
 
 beforeEach(() => {
   mockGet.mockReset();
+  mockPost.mockReset();
   mockPut.mockReset();
   mockDelete.mockReset();
 });
 
 afterEach(() => {
   mockGet.mockReset();
+  mockPost.mockReset();
   mockPut.mockReset();
   mockDelete.mockReset();
 });
@@ -438,5 +443,40 @@ describe('device volume', () => {
     const err = makeAxiosError(400);
     mockPut.mockRejectedValueOnce(err);
     await expect(setDeviceVolume(7, 150)).rejects.toBe(err);
+  });
+});
+
+describe('allowReregistration', () => {
+  it('POSTs /api/devices/{id}/reregistration-window with no body and maps { allowedUntil }', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: { allowedUntil: '2026-09-19T17:00:00Z', unexpected: 'dropped' },
+    });
+
+    const res = await allowReregistration(7);
+
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).toHaveBeenCalledWith('/api/devices/7/reregistration-window');
+    // Single positional arg: no body, no per-request config.
+    expect(mockPost.mock.calls[0]).toHaveLength(1);
+    // Only the contract field survives the mapping.
+    expect(res).toEqual({ allowedUntil: '2026-09-19T17:00:00Z' });
+  });
+
+  it.each([
+    ['a missing allowedUntil', {}],
+    ['a non-string allowedUntil', { allowedUntil: 1758301200000 }],
+    ['a null body', null],
+    ['a string body', 'ok'],
+  ])('throws on a 200 with %s', async (_label, data) => {
+    mockPost.mockResolvedValueOnce({ data });
+    await expect(allowReregistration(7)).rejects.toThrow(
+      'Malformed reregistration-window response',
+    );
+  });
+
+  it.each([403, 404])('propagates a %i axios error unchanged', async (status) => {
+    const err = makeAxiosError(status);
+    mockPost.mockRejectedValueOnce(err);
+    await expect(allowReregistration(7)).rejects.toBe(err);
   });
 });

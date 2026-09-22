@@ -138,7 +138,15 @@ const optionalNum = (v: unknown): number | null =>
 
 const optionalStr = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 
-const parseContentFileSummary = (raw: unknown): ContentFileSummary => {
+/**
+ * Parse one wire row into a {@link ContentFileSummary}.
+ *
+ * Exported because `GET /api/content/{id}` returns a `ContentFileDetail`,
+ * a strict superset of this shape — {@link getContentSummary} reuses the
+ * exact same validation the listing rows go through rather than trusting
+ * a second, hand-rolled parse.
+ */
+export const parseContentFileSummary = (raw: unknown): ContentFileSummary => {
   if (typeof raw !== 'object' || raw === null) throw new Error('row is not an object');
   const v = raw as Record<string, unknown>;
   if (typeof v.id !== 'number' || !Number.isFinite(v.id)) throw new Error('id');
@@ -194,6 +202,7 @@ const dropUndefined = (obj: Record<string, unknown>): Record<string, unknown> =>
 export const listContent = async (
   filters: ContentListFilters,
   pageable: Pageable,
+  options?: { signal?: AbortSignal; suppressErrorToast?: boolean },
 ): Promise<Page<ContentFileSummary>> => {
   const params = dropUndefined({
     projectId: filters.projectId,
@@ -203,7 +212,16 @@ export const listContent = async (
     size: pageable.size,
     sort: pageable.sort,
   });
-  const { data } = await http.get<unknown>('/api/content', { params });
+  // Additive and backward-compatible: callers that pass two arguments get the
+  // exact request config they always got. The background poll in
+  // `useContentItems` needs both — an abort signal so only one list request is
+  // ever in flight, and toast suppression so a blip on a silent refetch does
+  // not pop a modal over a grid the operator is still reading.
+  const { data } = await http.get<unknown>('/api/content', {
+    params,
+    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+    ...(options?.suppressErrorToast === true ? { _suppressErrorToast: true } : {}),
+  });
   return parsePage(data, parseContentFileSummary);
 };
 
@@ -219,6 +237,31 @@ export const listContent = async (
 export const getContent = async (id: number): Promise<ContentFileDetail> => {
   const { data } = await http.get<ContentFileDetail>(`/api/content/${String(id)}`);
   return data;
+};
+
+/**
+ * GET /api/content/{id}, parsed and narrowed to the listing row shape.
+ *
+ * The single-row reconciliation call behind live content status: one id in,
+ * one validated row out, no toast. `ContentFileDetail` is a superset of the
+ * summary shape and its `thumbnailUrl` is presigned by the same
+ * `decorateWithThumbnail` the listing uses, so a row fetched here drops
+ * straight into the grid alongside rows that came from `listContent`.
+ *
+ * **Not `getContent`.** That one performs no validation and lets the global
+ * interceptor toast a 403/404 — fatal here, where a miss is the *expected*
+ * answer for another operator's content fanned out over the unscoped
+ * CONTENT_STATUS_CHANGE channel.
+ */
+export const getContentSummary = async (
+  id: number,
+  options?: { signal?: AbortSignal },
+): Promise<ContentFileSummary> => {
+  const { data } = await http.get<unknown>(`/api/content/${String(id)}`, {
+    _suppressErrorToast: true,
+    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+  });
+  return parseContentFileSummary(data);
 };
 
 /**

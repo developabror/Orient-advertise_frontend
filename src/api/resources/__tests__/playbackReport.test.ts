@@ -43,13 +43,16 @@ const wireResponse = (over: Record<string, unknown> = {}): Record<string, unknow
 });
 
 describe('getDevicePlaybackReport', () => {
-  it('GETs /api/stats/device/{id} with ISO from/to and _suppressErrorToast (no auth header)', async () => {
+  it('GETs /api/stats/device/{id} with Tashkent day bounds and _suppressErrorToast (no auth header)', async () => {
     mockGet.mockResolvedValueOnce({ data: wireResponse() });
 
     await getDevicePlaybackReport(42, { from: '2026-06-17', to: '2026-06-24' });
 
     expect(mockGet).toHaveBeenCalledWith('/api/stats/device/42', {
-      params: { from: '2026-06-17T00:00:00Z', to: '2026-06-24T23:59:59Z' },
+      // Tashkent (UTC+5) day bounds, not UTC ones: 17 Jun in Tashkent starts at
+      // 16 Jun 19:00Z, and 24 Jun ends one microsecond below 24 Jun 19:00Z —
+      // the backend's `to` bound is inclusive (`playedAt <= :to`).
+      params: { from: '2026-06-16T19:00:00.000Z', to: '2026-06-24T18:59:59.999999Z' },
       _suppressErrorToast: true,
     });
     // No Authorization header and NOT _suppressErrorModal (a GET never triggers it).

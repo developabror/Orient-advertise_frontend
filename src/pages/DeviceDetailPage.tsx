@@ -21,6 +21,7 @@ import {
 import { http } from '@api/http';
 import { notify } from '@api/notify';
 import {
+  allowReregistration,
   clearDeviceVolume,
   deleteDevice,
   isErrorResponse,
@@ -40,6 +41,7 @@ import {
   type DeviceDetail,
 } from '@hooks';
 import type { DeviceStatus } from '@api/deviceStatus';
+import { formatTashkent } from '@/lib/timezone';
 
 const STATUS_LABEL_KEY: Record<DeviceStatus, string> = {
   online: 'deviceDetailPage.statusOnline',
@@ -277,11 +279,15 @@ export const DeviceDetailPage = () => {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmRereg, setConfirmRereg] = useState(false);
+  const [reregError, setReregError] = useState<string | null>(null);
 
   // Admin and operator can drive devices; other roles see the panel read-only.
   const canControl = role === 'admin' || role === 'operator';
   // Deleting a device (soft-delete) is ADMIN-only; the API enforces this too.
   const canDelete = role === 'admin';
+  // Opening a re-registration window is ADMIN-only; the API enforces this too.
+  const canAllowRereg = role === 'admin';
 
   // Diagnostics is a direct GET, not a queued action — it doesn't share the
   // pendingAction/ConfirmDialog flow used by sync/identify/restart.
@@ -335,6 +341,12 @@ export const DeviceDetailPage = () => {
   }
 
   const device = fetchState.device;
+  const isOnline = device.status === 'online';
+
+  // Only a future instant counts as an open window (a lapsed one may still be
+  // served). The hook already nulls non-string / unparseable values.
+  const reregAllowedUntil = device.reregistrationAllowedUntil;
+  const reregWindowOpen = reregAllowedUntil !== null && Date.parse(reregAllowedUntil) > Date.now();
 
   // Source of the effective volume. We only have the device's own fields here
   // (the detail DTO doesn't carry the group's volume), so an inherited value is
@@ -474,6 +486,17 @@ export const DeviceDetailPage = () => {
               >
                 {t('deviceDetailPage.moveDevice')}
               </Button>
+              {canAllowRereg && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setReregError(null);
+                    setConfirmRereg(true);
+                  }}
+                >
+                  {t('deviceDetailPage.allowRereg')}
+                </Button>
+              )}
               <Button
                 variant="danger"
                 onClick={() => {
@@ -494,6 +517,13 @@ export const DeviceDetailPage = () => {
                 </Button>
               )}
             </div>
+            {reregWindowOpen && (
+              <p className="oa-actions-panel__hint">
+                {t('deviceDetailPage.reregAllowedUntil', {
+                  time: formatTashkent(reregAllowedUntil),
+                })}
+              </p>
+            )}
             <p className="oa-actions-panel__hint">
               {t('deviceDetailPage.commandsHint')}
             </p>
@@ -633,6 +663,66 @@ export const DeviceDetailPage = () => {
             const status = axios.isAxiosError(err) ? err.response?.status : undefined;
             if (status !== undefined && status < 500 && status !== 403) {
               setDeleteError(extractMessage(err) ?? t('deviceDetailPage.errDelete'));
+            }
+            throw err;
+          }
+        }}
+      />
+
+      {/* Deliberately no <Trans values>: i18n runs with escapeValue:false, so a
+          device-supplied string (e.g. the serial) interpolated there could
+          inject component tags into the parsed markup. */}
+      <ConfirmDialog
+        isOpen={confirmRereg}
+        title={t('deviceDetailPage.reregTitle')}
+        message={
+          <div className="oa-bulk-confirm">
+            <p>{t('deviceDetailPage.reregMessage')}</p>
+            <p>{t('deviceDetailPage.reregWindow')}</p>
+            {isOnline && (
+              <p className="oa-bulk-confirm__warning" role="alert">
+                <Trans
+                  i18nKey="deviceDetailPage.reregOnlineWarning"
+                  components={{ s: <strong /> }}
+                />
+              </p>
+            )}
+            {reregError !== null && (
+              <p className="oa-confirm__error" role="alert">
+                {reregError}
+              </p>
+            )}
+          </div>
+        }
+        // A working device almost never needs this, and the window lets whoever
+        // registers the serial first take it over — make the confirm read as risky.
+        variant={isOnline ? 'danger' : 'default'}
+        confirmLabel={t('deviceDetailPage.allowRereg')}
+        onCancel={() => {
+          setConfirmRereg(false);
+          setReregError(null);
+        }}
+        onConfirm={async () => {
+          setReregError(null);
+          try {
+            const { allowedUntil } = await allowReregistration(Number.parseInt(device.id, 10));
+            notify.success(
+              t('deviceDetailPage.toastReregAllowed', { time: formatTashkent(allowedUntil) }),
+            );
+            setConfirmRereg(false);
+            // Same hard-refresh idiom as move/volume: useDevice has no refetch.
+            navigate(0);
+          } catch (err: unknown) {
+            // As with delete, the global interceptor already toasts 403, 5xx and
+            // network failures. Surface everything else inline — a 404, or a 200
+            // with a malformed body (non-axios error) — and keep the dialog open
+            // + re-enabled (rethrow).
+            const isAxios = axios.isAxiosError(err);
+            const status = isAxios ? err.response?.status : undefined;
+            const toastedGlobally =
+              isAxios && (status === undefined || status === 403 || status >= 500);
+            if (!toastedGlobally) {
+              setReregError(extractMessage(err) ?? t('deviceDetailPage.errRereg'));
             }
             throw err;
           }

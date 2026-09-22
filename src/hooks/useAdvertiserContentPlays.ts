@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { http } from '@api/http';
+import { tashkentDayEndUtc, tashkentDayStartUtc } from '@/lib/timezone';
 
 export interface PlayTimestamp {
   readonly id: string;
@@ -99,8 +100,8 @@ export const useAdvertiserContentPlays = (
       .get<unknown>(`/api/stats/content/${encodeURIComponent(query.contentId)}`, {
         // Spec uses `from`/`to` ISO date-time + Spring Pageable (0-indexed).
         params: {
-          from: `${query.dateFrom}T00:00:00Z`,
-          to: `${query.dateTo}T23:59:59Z`,
+          from: tashkentDayStartUtc(query.dateFrom),
+          to: tashkentDayEndUtc(query.dateTo),
           page: Math.max(0, query.page - 1),
           size: query.size,
         },

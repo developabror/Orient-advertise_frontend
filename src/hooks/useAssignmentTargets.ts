@@ -65,13 +65,17 @@ const fetchTargets = async (
   return page.content.map(groupToTarget);
 };
 
-export const useAssignmentTargets = (type: TargetType): AssignmentTargetsState => {
+export const useAssignmentTargets = (
+  type: TargetType,
+  enabled = true,
+): AssignmentTargetsState => {
   const [targets, setTargets] = useState<readonly AssignmentTarget[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     setIsLoading(true);
     setError(null);
@@ -92,7 +96,7 @@ export const useAssignmentTargets = (type: TargetType): AssignmentTargetsState =
     return () => {
       cancelled = true;
     };
-  }, [type, refreshKey]);
+  }, [type, enabled, refreshKey]);
 
   const retry = useCallback((): void => {
     setRefreshKey((k) => k + 1);

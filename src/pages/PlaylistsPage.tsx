@@ -12,6 +12,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
+  AssignContentDrawer,
   Button,
   type Column,
   ConfirmDialog,
@@ -331,6 +332,8 @@ export const PlaylistsPage = () => {
 
   const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [assignOpen, setAssignOpen] = useState<boolean>(false);
 
   const [createOpen, setCreateOpen] = useState<boolean>(false);
   const [createState, setCreateState] = useState<{ projectId: string; name: string }>({
@@ -804,17 +807,27 @@ export const PlaylistsPage = () => {
       <header className="oa-settings-page__header">
         <h2>{t('playlistsPage.title')}</h2>
         {canMutate && (
-          <Button
-            variant="primary"
-            onClick={() => {
-              setCreateState({ projectId: '', name: '' });
-              setCreateNameError(undefined);
-              setCreateGenericError(null);
-              setCreateOpen(true);
-            }}
-          >
-            {t('playlistsPage.newPlaylist')}
-          </Button>
+          <div className="oa-settings-page__header-actions">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setAssignOpen(true);
+              }}
+            >
+              {t('playlistsPage.assignContent')}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setCreateState({ projectId: '', name: '' });
+                setCreateNameError(undefined);
+                setCreateGenericError(null);
+                setCreateOpen(true);
+              }}
+            >
+              {t('playlistsPage.newPlaylist')}
+            </Button>
+          </div>
         )}
       </header>
 
@@ -1098,6 +1111,13 @@ export const PlaylistsPage = () => {
           setConfirmDelete(false);
         }}
         onConfirm={submitDelete}
+      />
+
+      <AssignContentDrawer
+        isOpen={assignOpen}
+        onClose={() => {
+          setAssignOpen(false);
+        }}
       />
 
       <Modal

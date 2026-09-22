@@ -135,3 +135,39 @@ describe('useDevice — sync group mapping', () => {
     expect(device.syncGroupName).toBeNull();
   });
 });
+
+describe('useDevice — re-registration window mapping', () => {
+  const readyDevice = async () => {
+    const { result } = renderHook(() => useDevice('7'));
+    await waitFor(() => {
+      expect(result.current.state).toBe('ready');
+    });
+    const s = result.current;
+    if (s.state !== 'ready') throw new Error('expected ready state');
+    return s.device;
+  };
+
+  it('carries reregistrationAllowedUntil through when it is an ISO instant', async () => {
+    mockDetail(detail({ reregistrationAllowedUntil: '2026-09-19T17:00:00Z' }));
+    const device = await readyDevice();
+    expect(device.reregistrationAllowedUntil).toBe('2026-09-19T17:00:00Z');
+  });
+
+  it('nulls it when the window is closed (null) or the field is absent', async () => {
+    mockDetail(detail({ reregistrationAllowedUntil: null }));
+    expect((await readyDevice()).reregistrationAllowedUntil).toBeNull();
+
+    mockDetail(detail());
+    expect((await readyDevice()).reregistrationAllowedUntil).toBeNull();
+  });
+
+  it.each([
+    ['a number', 1758301200000],
+    ['an object', { at: '2026-09-19T17:00:00Z' }],
+    ['an unparseable string', 'not-a-date'],
+  ])('sanitizes %s to null instead of failing the load', async (_label, value) => {
+    mockDetail(detail({ reregistrationAllowedUntil: value }));
+    const device = await readyDevice();
+    expect(device.reregistrationAllowedUntil).toBeNull();
+  });
+});

@@ -3,12 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
-  AssignContentDrawer,
   Button,
   ConfirmDialog,
   ContentCard,
   ContentPreviewModal,
-  ContentSchedulesDrawer,
   ContentUploader,
   EmptyState,
   Pagination,
@@ -89,11 +87,9 @@ export const ContentPage = () => {
     [page, status],
   );
 
-  const { items, totalPages, totalItems, isLoading, isStale, refresh, patchItem } =
+  const { items, totalPages, totalItems, isLoading, isStale, refresh, patchItem, syncItem } =
     useContentItems(query);
   const [urgentOpen, setUrgentOpen] = useState(false);
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [schedulesContentId, setSchedulesContentId] = useState<string | null>(null);
   const [previewContentId, setPreviewContentId] = useState<string | null>(null);
 
   // Deleting content (soft-delete) is ADMIN/OPERATOR only; the API enforces it too.
@@ -116,16 +112,20 @@ export const ContentPage = () => {
       setRetryingId(id);
       retranscodeContent(Number.parseInt(id, 10))
         .then((res) => {
-          // Optimistic: move the card out of its stuck state immediately and
-          // let the WS frame / uploader poll drive it the rest of the way.
-          // The backend echoes the status it committed; fall back to
-          // TRANSCODING when it sends nothing recognisable.
+          // Optimistic: move the card out of its stuck state immediately, and
+          // let the listing's live CONTENT_STATUS_CHANGE feed drive it the
+          // rest of the way. The backend echoes the status it committed; fall
+          // back to TRANSCODING when it sends nothing recognisable.
           const next = res.status ?? 'TRANSCODING';
           patchItem(id, {
             status: next === 'TRANSCODING' ? 'transcoding' : 'uploading',
             stalled: false,
             errorMessage: null,
           });
+          // The retranscode CAS commits before this 200, so a single
+          // reconciliation lands the card on committed server truth rather
+          // than leaving it on a guess until the next poll.
+          syncItem(id);
           notify.success(t('contentPage.retryStarted'));
         })
         .catch((err: unknown) => {
@@ -140,7 +140,7 @@ export const ContentPage = () => {
           setRetryingId(null);
         });
     },
-    [patchItem, t],
+    [patchItem, syncItem, t],
   );
 
   const requestDelete = useCallback(
@@ -149,11 +149,6 @@ export const ContentPage = () => {
       setDeleteTarget(items.find((i) => i.id === id) ?? null);
     },
     [items],
-  );
-
-  const schedulesItem = useMemo(
-    () => items.find((i) => i.id === schedulesContentId) ?? null,
-    [items, schedulesContentId],
   );
 
   const previewItem = useMemo(
@@ -186,14 +181,6 @@ export const ContentPage = () => {
             <span className="oa-dashboard__stale">{t('contentPage.stale')}</span>
           )}
           <Button
-            variant="secondary"
-            onClick={() => {
-              setAssignOpen(true);
-            }}
-          >
-            {t('contentPage.assignContent')}
-          </Button>
-          <Button
             variant="urgent"
             onClick={() => {
               setUrgentOpen(true);
@@ -204,7 +191,7 @@ export const ContentPage = () => {
         </div>
       </header>
 
-      <ContentUploader onItemReady={refresh} />
+      <ContentUploader onItemReady={refresh} onUploadAccepted={syncItem} />
 
       <div className="oa-content__toolbar">
         <Select
@@ -263,7 +250,8 @@ export const ContentPage = () => {
               key={item.id}
               item={item}
               layout={layout}
-              onSchedules={setSchedulesContentId}
+              // No onSchedules: dayparting schedules are stored but not applied to playback yet
+              // (review LOGIC-04), so the Schedules action stays hidden until that feature exists.
               onPreview={setPreviewContentId}
               isRetrying={retryingId === item.id}
               retryError={retryErrors[item.id] ?? null}
@@ -286,15 +274,9 @@ export const ContentPage = () => {
 
       <UrgentUploadModal
         isOpen={urgentOpen}
+        onUploadAccepted={syncItem}
         onClose={() => {
           setUrgentOpen(false);
-        }}
-      />
-
-      <AssignContentDrawer
-        isOpen={assignOpen}
-        onClose={() => {
-          setAssignOpen(false);
         }}
       />
 
@@ -303,21 +285,6 @@ export const ContentPage = () => {
         filename={previewItem?.filename}
         onClose={() => {
           setPreviewContentId(null);
-        }}
-      />
-
-      <ContentSchedulesDrawer
-        isOpen={schedulesContentId !== null}
-        contentId={schedulesContentId}
-        // TODO: resolve the active assignment for `schedulesContentId` (e.g.
-        // via a lookup endpoint or by lifting the assignmentId into the
-        // ContentItem) and pass it through here. Until that's wired the
-        // drawer renders empty schedules; create/update still work because
-        // they receive `assignmentId` directly through the form input.
-        assignmentId={null}
-        contentFilename={schedulesItem?.filename}
-        onClose={() => {
-          setSchedulesContentId(null);
         }}
       />
 

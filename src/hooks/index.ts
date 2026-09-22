@@ -30,7 +30,12 @@ export type {
   DeviceEventsState,
   EventPriority,
 } from './useDeviceEvents';
-export { useContentItems, isRowStalled } from './useContentItems';
+export {
+  useContentItems,
+  isRowStalled,
+  matchesContentFilter,
+  applyWsPatch,
+} from './useContentItems';
 export type {
   ContentItem,
   ContentStatus,

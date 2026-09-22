@@ -5,28 +5,16 @@ import { useAdvertiserStats } from '@hooks/useAdvertiserStats';
 import { useAuth } from '@hooks/useAuth';
 import { Button } from './ui/Button';
 import { EmptyState } from './ui/EmptyState';
+import { tashkentPresetRange } from '@/lib/timezone';
 
 type TimeRange = '7d' | '30d' | 'custom';
 
-const MS_PER_DAY = 86_400_000;
-
 const isTimeRange = (v: string): v is TimeRange => v === '7d' || v === '30d' || v === 'custom';
 
-const formatDate = (d: Date): string => {
-  const yyyy = String(d.getUTCFullYear());
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-};
-
-const presetRange = (preset: '7d' | '30d'): { dateFrom: string; dateTo: string } => {
-  const now = new Date();
-  const days = preset === '7d' ? 7 : 30;
-  return {
-    dateFrom: formatDate(new Date(now.getTime() - days * MS_PER_DAY)),
-    dateTo: formatDate(now),
-  };
-};
+// Presets run on the TASHKENT calendar, not the host's. Built from getUTC*
+// parts, "today" stayed on yesterday's date until 05:00 local (FE-08).
+const presetRange = (preset: '7d' | '30d'): { dateFrom: string; dateTo: string } =>
+  tashkentPresetRange(preset === '7d' ? 7 : 30);
 
 interface ResolvedFilter {
   readonly timeRange: TimeRange;

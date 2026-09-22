@@ -169,12 +169,6 @@ const make409CompleteOverlapNoConflicts = (message: string): unknown =>
     },
   });
 
-const make404 = (): unknown =>
-  Object.assign(new Error('Request failed with status code 404'), {
-    isAxiosError: true,
-    response: { status: 404, data: { message: 'Assignment not found' } },
-  });
-
 // All POST .../confirm bodies, in call order (the normal confirm + any replace
 // re-confirm). `draftBody`/`confirmBody` above find the FIRST match; these tests
 // need to inspect every confirm.
@@ -351,12 +345,9 @@ describe('AssignContentDrawer — §2 explicit window (no silent now→2100 defa
 });
 
 describe('AssignContentDrawer — §2b local datetime serializes to the correct UTC instant', () => {
-  it('keeps the toISOString() conversion: 10:30 local (UTC+5) → 05:30Z', async () => {
+  const submitSchedule = async (): Promise<void> => {
     renderDrawer();
     driveToScheduleAllAcross();
-
-    // Explicit future window, toggles off. The test worker runs in Asia/Tashkent
-    // (UTC+5), mirroring a real user's browser.
     setSchedule('2030-06-04T10:30', '2030-06-04T12:30');
     expect(confirmBtn()).toBeEnabled();
 
@@ -368,10 +359,35 @@ describe('AssignContentDrawer — §2b local datetime serializes to the correct 
         expect.anything(),
       );
     });
+  };
+
+  it('reads the picker value as Tashkent: 10:30 → 05:30Z', async () => {
+    await submitSchedule();
 
     const body = draftBody();
     expect(body?.startTime).toBe('2030-06-04T05:30:00.000Z');
     expect(body?.endTime).toBe('2030-06-04T07:30:00.000Z');
+  });
+
+  it('still reads it as Tashkent when the BROWSER is in another zone', async () => {
+    // The worker is pinned to Asia/Tashkent (vite.config.ts), where the old
+    // browser-local `new Date(value).toISOString()` and the Tashkent conversion
+    // agree — so the test above passes either way and proves nothing on its own.
+    // A datetime-local string carries no zone; this drawer defines it as
+    // Tashkent, like ContentSchedulesDrawer. An operator on a laptop still set
+    // to New York must schedule the same instant as one sitting in the office.
+    const originalTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      await submitSchedule();
+
+      const body = draftBody();
+      expect(body?.startTime).toBe('2030-06-04T05:30:00.000Z');
+      expect(body?.endTime).toBe('2030-06-04T07:30:00.000Z');
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    }
   });
 });
 
@@ -483,27 +499,32 @@ describe('AssignContentDrawer — §6 Replace existing & assign', () => {
     targetId: 10,
     conflicts: [CONFLICT],
   };
+  // Same conflict, device-aware: 2 of the operator's 3 selected devices clash.
+  const DETAILS_DEVICE_AWARE = {
+    ...DETAILS,
+    conflicts: [{ ...CONFLICT, conflictingDeviceIds: [1, 2] }],
+  };
+  // …and the backend also reports that 3 devices keep the old content.
+  const DETAILS_WITH_REMAINDER = {
+    ...DETAILS,
+    conflicts: [{ ...CONFLICT, conflictingDeviceIds: [1, 2], remainingDeviceCount: 3 }],
+  };
   const RAW = 'Time overlap with existing assignment(s) [6] for REGION:1';
 
-  // First confirm always 409s with the enriched conflict; the replace re-confirm
-  // (no flag) is governed by `reconfirmOk`, the atomic confirm by `atomicOk`.
-  const wireOverlap = (opts: { atomicOk?: boolean; reconfirmOk?: boolean } = {}) => {
-    let noFlagConfirms = 0;
-    vi.mocked(http.post).mockImplementation((url: string, body?: unknown) => {
+  // Every no-flag confirm 409s with the enriched conflict (that's what opens
+  // the panel); the atomic `replaceConflicting:true` confirm is governed by
+  // `atomicOk`. `details` overrides the 409 envelope for the device-aware and
+  // remainingDeviceCount cases.
+  const wireOverlap = (opts: { atomicOk?: boolean; details?: unknown } = {}) => {
+    const body = opts.details ?? DETAILS;
+    vi.mocked(http.post).mockImplementation((url: string, reqBody?: unknown) => {
       if (url === '/api/assignments') return Promise.resolve({ data: { id: 123 } } as never);
       if (url.endsWith('/confirm')) {
-        const b = (body ?? {}) as Record<string, unknown>;
-        if (b.replaceConflicting === true) {
-          return opts.atomicOk
-            ? Promise.resolve({ data: { id: 123 } } as never)
-            : Promise.reject(make409Details(RAW, DETAILS));
+        const b = (reqBody ?? {}) as Record<string, unknown>;
+        if (b.replaceConflicting === true && opts.atomicOk) {
+          return Promise.resolve({ data: { id: 123 } } as never);
         }
-        noFlagConfirms += 1;
-        // 1st no-flag confirm = the original (409); a later one = the fallback
-        // re-confirm after cancelling, which succeeds when reconfirmOk.
-        return noFlagConfirms === 1 || !opts.reconfirmOk
-          ? Promise.reject(make409Details(RAW, DETAILS))
-          : Promise.resolve({ data: { id: 123 } } as never);
+        return Promise.reject(make409Details(RAW, body));
       }
       return Promise.resolve({ data: {} } as never);
     });
@@ -516,9 +537,18 @@ describe('AssignContentDrawer — §6 Replace existing & assign', () => {
     await screen.findByText('Korzinka promo');
   };
 
+  // Same, but with an INDIVIDUAL selection of 3 devices, so the dialog has a
+  // concrete "N selected devices" count to print.
+  const driveToPanelIndividual = async (conflictName = 'Korzinka promo') => {
+    driveToScheduleIndividual(['1', '2', '3']);
+    chooseStartNowNoEnd();
+    fireEvent.click(confirmBtn());
+    await screen.findByText(conflictName);
+  };
+
   const openReplaceDialog = async () => {
     fireEvent.click(screen.getByRole('button', { name: /Replace existing/i }));
-    return screen.findByRole('button', { name: 'Replace & assign' });
+    return screen.findByRole('button', { name: 'Move & assign' });
   };
 
   it('renders each conflict (playlist name + localized window) and both actions; hides the raw string', async () => {
@@ -537,19 +567,59 @@ describe('AssignContentDrawer — §6 Replace existing & assign', () => {
     expect(screen.queryByText(/Time overlap/i)).not.toBeInTheDocument();
   });
 
-  it('requires an explicit confirmation naming what is removed and what replaces it', async () => {
-    wireOverlap({ atomicOk: true });
+  it('requires an explicit confirmation naming how many devices move, what they leave, and what replaces it', async () => {
+    // Device-aware 409: 2 of the operator's 3 selected devices clash, so the
+    // dialog names a hand-over of exactly those 2 — not a deletion of the
+    // whole booking (the other devices it drives are untouched).
+    wireOverlap({ atomicOk: true, details: DETAILS_DEVICE_AWARE });
     renderDrawer();
-    await driveToPanel();
+    await driveToPanelIndividual();
     await openReplaceDialog();
 
-    expect(screen.getByText(/This will remove the existing booking/i)).toBeInTheDocument();
-    // Conflict name (removed) and the new playlist (replacement), both in the dialog.
+    expect(screen.getByText('2 selected devices will stop playing:')).toBeInTheDocument();
+    // The old deletion copy must be gone — it overstated the blast radius.
+    expect(screen.queryByText(/This will remove the existing booking/i)).not.toBeInTheDocument();
+    // What they leave (conflict) and what they move to (new playlist).
     expect(screen.getByText('Korzinka promo', { selector: 'strong' })).toBeInTheDocument();
     expect(screen.getByText('Has Items', { selector: 'strong' })).toBeInTheDocument();
   });
 
-  it('atomic path: confirms with replaceConflicting:true and never cancels', async () => {
+  it('falls back to the count-less takeover line when the 409 names no devices', async () => {
+    // Older backend: no `conflictingDeviceIds`, so the affected count is
+    // unknown. The dialog says so rather than inventing a number.
+    wireOverlap({ atomicOk: true }); // DETAILS has no conflictingDeviceIds
+    renderDrawer();
+    await driveToPanel();
+    await openReplaceDialog();
+
+    expect(screen.getByText('The selected devices will stop playing:')).toBeInTheDocument();
+    // No invented number — not even the target total (4 previewed devices).
+    expect(screen.queryByText(/\d+ selected devices? will stop playing/i)).not.toBeInTheDocument();
+  });
+
+  it('names how many devices keep the old content when the backend says so', async () => {
+    // Partial-device supersede: the predecessor drives 5 devices, 2 are handed
+    // over, 3 stay — the server reports the 3, and the dialog prints it.
+    wireOverlap({ atomicOk: true, details: DETAILS_WITH_REMAINDER });
+    renderDrawer();
+    await driveToPanelIndividual();
+    await openReplaceDialog();
+
+    expect(screen.getByText('3 other devices stay on this content.')).toBeInTheDocument();
+  });
+
+  it('says nothing about what stays when the backend omits remainingDeviceCount', async () => {
+    // Never guess: an older backend sends no count, so the line is absent
+    // rather than defaulted to 0 ("no devices stay" would be a lie).
+    wireOverlap({ atomicOk: true, details: DETAILS_DEVICE_AWARE });
+    renderDrawer();
+    await driveToPanelIndividual();
+    await openReplaceDialog();
+
+    expect(screen.queryByText(/stays? on this content/i)).not.toBeInTheDocument();
+  });
+
+  it('atomic path: one confirm with replaceConflicting:true, no cancel, no re-confirm', async () => {
     wireOverlap({ atomicOk: true });
     const onClose = vi.fn();
     render(<AssignContentDrawer isOpen onClose={onClose} />);
@@ -557,49 +627,101 @@ describe('AssignContentDrawer — §6 Replace existing & assign', () => {
     fireEvent.click(await openReplaceDialog());
 
     await waitFor(() => {
-      expect(notify.success).toHaveBeenCalledWith(
-        'Replaced existing content — assigned to 4 devices.',
-      );
+      expect(notify.success).toHaveBeenCalledWith('Moved 4 devices to the new playlist.');
     });
-    expect(confirmBodies().some((b) => b.replaceConflicting === true)).toBe(true);
+    // Exactly one flagged confirm, and NOTHING else after it: no DELETE (that
+    // endpoint has no device scoping and would blank the unselected devices),
+    // and no unflagged re-confirm.
+    expect(confirmBodies().filter((b) => b.replaceConflicting === true)).toHaveLength(1);
     expect(http.delete).not.toHaveBeenCalled();
+    // The only unflagged confirm is the original one that opened the panel.
+    expect(confirmBodies().filter((b) => b.replaceConflicting !== true)).toHaveLength(1);
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('fallback path: cancels the conflict then re-confirms when the atomic flag is not honored', async () => {
-    wireOverlap({ atomicOk: false, reconfirmOk: true });
+  it('a persistent 409 on replace surfaces inline and cancels nothing', async () => {
+    // The atomic confirm keeps 409ing (e.g. a racing operator, or a server that
+    // won't supersede). That is a genuine failure now: the old cancel-then-
+    // reconfirm "recovery" wiped the playlist of every device the conflicting
+    // assignment drove, selected or not.
+    wireOverlap({ atomicOk: false });
     const onClose = vi.fn();
     render(<AssignContentDrawer isOpen onClose={onClose} />);
     await driveToPanel();
     fireEvent.click(await openReplaceDialog());
 
-    await waitFor(() => {
-      expect(notify.success).toHaveBeenCalledWith(
-        'Replaced existing content — assigned to 4 devices.',
-      );
-    });
-    // cancelAssignment(6) was issued, and a fresh (no-flag) confirm followed.
-    expect(http.delete).toHaveBeenCalledWith('/api/assignments/6', expect.anything());
-    expect(confirmBodies().filter((b) => b.replaceConflicting !== true).length).toBe(2);
-    expect(onClose).toHaveBeenCalled();
+    expect(
+      await screen.findByText('Could not replace the existing assignment. Please try again.'),
+    ).toBeInTheDocument();
+    expect(http.delete).not.toHaveBeenCalled();
+    // Drawer stays open on the overlap panel so the operator can retime/retry.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText('Korzinka promo')).toBeInTheDocument();
+    expect(notify.success).not.toHaveBeenCalled();
+    // Still no id-leaking developer prose.
+    expect(screen.queryByText(/Time overlap/i)).not.toBeInTheDocument();
   });
 
-  it('completes the assign even if cancelling the conflict 404s (already removed)', async () => {
-    wireOverlap({ atomicOk: false, reconfirmOk: true });
-    vi.mocked(http.delete).mockRejectedValue(make404() as never);
-    const onClose = vi.fn();
-    render(<AssignContentDrawer isOpen onClose={onClose} />);
-    await driveToPanel();
-    fireEvent.click(await openReplaceDialog());
+  // ===== v1.0.142: a replaced assignment resumes when this one ends =====
+  //
+  // The backend no longer retires a predecessor the new window does not outlast:
+  // both rows stay CONFIRMED and precedence decides who plays. The dialog must
+  // say when the old content comes back, or "Move & assign" still reads as a
+  // permanent deletion of an open-ended booking.
 
-    await waitFor(() => {
-      expect(notify.success).toHaveBeenCalledWith(
-        'Replaced existing content — assigned to 4 devices.',
-      );
+  // Drive to the overlap panel with an EXPLICIT one-day window instead of
+  // start-now/no-end, so this assignment has an end date to resume on.
+  const driveToPanelWithWindow = async (
+    startLocal = '2030-06-04T10:30',
+    endLocal = '2030-06-11T12:30',
+  ) => {
+    driveToScheduleIndividual(['1', '2', '3']);
+    setSchedule(startLocal, endLocal);
+    fireEvent.click(confirmBtn());
+    await screen.findByText('Korzinka promo');
+  };
+
+  it('names when each outlasted conflict resumes — the new window is not a deletion', async () => {
+    wireOverlap({ atomicOk: true, details: DETAILS_DEVICE_AWARE });
+    renderDrawer();
+    await driveToPanelWithWindow();
+    await openReplaceDialog();
+
+    // The conflict ends at the year-2100 sentinel, this campaign on 11 Jun 2030
+    // 12:30 local (= Tashkent, the pinned test zone) → the booking resumes then.
+    expect(
+      screen.getByText('Korzinka promo resumes on 11 Jun 2030, 12:30.'),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing about resuming when this assignment has no end date', async () => {
+    // A campaign that runs indefinitely outlasts every conflict, so nothing ever
+    // comes back — printing a resume date would be a lie.
+    wireOverlap({ atomicOk: true, details: DETAILS_DEVICE_AWARE });
+    renderDrawer();
+    await driveToPanelIndividual(); // start-now + no-end-date
+    await openReplaceDialog();
+
+    expect(screen.queryByText(/resumes on/i)).not.toBeInTheDocument();
+  });
+
+  it('says nothing about resuming for a conflict that ends BEFORE this assignment', async () => {
+    // This window outlasts the conflict, so the server really does retire it —
+    // there is nothing to resume.
+    wireOverlap({
+      atomicOk: true,
+      details: {
+        ...DETAILS,
+        conflicts: [
+          { ...CONFLICT, conflictingDeviceIds: [1, 2], endTime: '2030-06-05T00:00:00Z' },
+        ],
+      },
     });
-    expect(http.delete).toHaveBeenCalledWith('/api/assignments/6', expect.anything());
-    // 404 swallowed → the re-confirm still ran and the assign completed.
-    expect(onClose).toHaveBeenCalled();
+    renderDrawer();
+    await driveToPanelWithWindow();
+    await openReplaceDialog();
+
+    expect(screen.queryByText(/resumes on/i)).not.toBeInTheDocument();
   });
 
   it('"Choose a different time" dismisses the overlap and keeps the wizard on scheduling', async () => {
@@ -766,6 +888,31 @@ describe('AssignContentDrawer — §7 device-aware overlap', () => {
     // Both conflicting playlists are listed.
     expect(screen.getByText('Morning Loop')).toBeInTheDocument();
     expect(screen.getByText('Evening Loop')).toBeInTheDocument();
+  });
+});
+
+describe('AssignContentDrawer — §8 sync-group fineprint on the Schedule summary', () => {
+  it('warns that reassigned devices leave their sync group, alongside the offline fineprint', () => {
+    // Confirming removes the affected devices from their sync group (sales
+    // point) server-side. The operator is told BEFORE confirming, so a sales
+    // point never loses a member silently.
+    renderDrawer();
+    driveToScheduleAllAcross();
+
+    expect(
+      screen.getByText(
+        'Devices that move to a different playlist are removed from their sync group (sales point).',
+      ),
+    ).toBeInTheDocument();
+    // The existing offline fineprint is not displaced by it.
+    expect(screen.getByText(/currently offline will apply this content/i)).toBeInTheDocument();
+  });
+
+  it('is absent before the Schedule step', () => {
+    renderDrawer();
+    driveToDevices();
+
+    expect(screen.queryByText(/removed from their sync group/i)).not.toBeInTheDocument();
   });
 });
 

@@ -106,11 +106,13 @@ const en = {
   summaryDevicesReceive: 'from {{name}} will receive this content.',
   summaryFineprint:
     'Any of those devices that are currently offline will apply this content the next time they reconnect.',
+  syncGroupFineprint:
+    'Devices that move to a different playlist are removed from their sync group (sales point).',
   noTargetDash: '—',
 
   // Toasts
   assignedSuccess: 'Assigned to {{label}}.',
-  replacedSuccess: 'Replaced existing content — assigned to {{label}}.',
+  replacedSuccess: 'Moved {{label}} to the new playlist.',
   couldNotConfirm: 'Could not confirm assignment.',
   couldNotReplace: 'Could not replace the existing assignment. Please try again.',
 
@@ -121,12 +123,18 @@ const en = {
   keepEditing: 'Keep editing',
 
   // Replace dialog
-  replaceTitle: 'Replace existing content?',
-  replaceRemoveOne: 'This will remove the existing booking:',
-  replaceRemoveOther: 'This will remove the existing bookings:',
-  replaceRunInstead: 'and run <0>{{name}}</0> instead.',
+  replaceTitle: 'Move these devices to the new playlist?',
+  replaceTakeoverOne: '1 selected device will stop playing:',
+  replaceTakeoverOther: '{{count}} selected devices will stop playing:',
+  replaceTakeoverUnknown: 'The selected devices will stop playing:',
+  replaceRunInstead: 'and will play <0>{{name}}</0> instead.',
+  replaceKeepsOne: '1 other device stays on this content.',
+  replaceKeepsOther: '{{count}} other devices stay on this content.',
+  // Shown per conflict that outlasts this assignment: it is not deleted, it is
+  // only outranked for this window and comes back by itself afterwards.
+  replaceResumes: '{{name}} resumes on {{date}}.',
   newPlaylistFallback: 'the new playlist',
-  replaceConfirmLabel: 'Replace & assign',
+  replaceConfirmLabel: 'Move & assign',
 };
 
 export const dict = {
@@ -226,10 +234,12 @@ export const dict = {
     summaryDevicesReceive: 'из «{{name}}» получат этот контент.',
     summaryFineprint:
       'Любые из этих устройств, которые сейчас офлайн, применят этот контент при следующем подключении.',
+    syncGroupFineprint:
+      'Устройства, переведённые на другой плейлист, удаляются из своей группы синхронизации (точки продаж).',
     noTargetDash: '—',
 
     assignedSuccess: 'Назначено: {{label}}.',
-    replacedSuccess: 'Существующий контент заменён — назначено: {{label}}.',
+    replacedSuccess: 'Переведено на новый плейлист: {{label}}.',
     couldNotConfirm: 'Не удалось подтвердить назначение.',
     couldNotReplace: 'Не удалось заменить существующее назначение. Попробуйте ещё раз.',
 
@@ -238,12 +248,16 @@ export const dict = {
     discard: 'Отменить',
     keepEditing: 'Продолжить редактирование',
 
-    replaceTitle: 'Заменить существующий контент?',
-    replaceRemoveOne: 'Это удалит существующее бронирование:',
-    replaceRemoveOther: 'Это удалит существующие бронирования:',
-    replaceRunInstead: 'и вместо этого запустит <0>«{{name}}»</0>.',
+    replaceTitle: 'Перевести эти устройства на новый плейлист?',
+    replaceTakeoverOne: '1 выбранное устройство перестанет воспроизводить:',
+    replaceTakeoverOther: '{{count}} выбранных устройств перестанут воспроизводить:',
+    replaceTakeoverUnknown: 'Выбранные устройства перестанут воспроизводить:',
+    replaceRunInstead: 'и вместо этого будут воспроизводить <0>«{{name}}»</0>.',
+    replaceKeepsOne: 'Ещё 1 устройство останется на этом контенте.',
+    replaceKeepsOther: 'Ещё {{count}} устройств останутся на этом контенте.',
+    replaceResumes: '«{{name}}» возобновится {{date}}.',
     newPlaylistFallback: 'новый плейлист',
-    replaceConfirmLabel: 'Заменить и назначить',
+    replaceConfirmLabel: 'Перевести и назначить',
   } satisfies typeof en,
   uz: {
     targetTypeRegion: 'Hudud',
@@ -341,10 +355,12 @@ export const dict = {
     summaryDevicesReceive: '«{{name}}»dan bu kontentni oladi.',
     summaryFineprint:
       'Hozirda oflayn boʻlgan har qanday qurilma keyingi safar ulanganda bu kontentni qoʻllaydi.',
+    syncGroupFineprint:
+      'Boshqa pleylistga oʻtkazilgan qurilmalar oʻz sinxronlash guruhidan (savdo nuqtasidan) chiqariladi.',
     noTargetDash: '—',
 
     assignedSuccess: 'Tayinlandi: {{label}}.',
-    replacedSuccess: 'Mavjud kontent almashtirildi — tayinlandi: {{label}}.',
+    replacedSuccess: 'Yangi pleylistga oʻtkazildi: {{label}}.',
     couldNotConfirm: 'Tayinlovni tasdiqlab boʻlmadi.',
     couldNotReplace: 'Mavjud tayinlovni almashtirib boʻlmadi. Qayta urinib koʻring.',
 
@@ -353,11 +369,15 @@ export const dict = {
     discard: 'Bekor qilish',
     keepEditing: 'Tahrirni davom ettirish',
 
-    replaceTitle: 'Mavjud kontent almashtirilsinmi?',
-    replaceRemoveOne: 'Bu mavjud bandlovni oʻchiradi:',
-    replaceRemoveOther: 'Bu mavjud bandlovlarni oʻchiradi:',
-    replaceRunInstead: 'va oʻrniga <0>«{{name}}»</0>ni ishga tushiradi.',
+    replaceTitle: 'Bu qurilmalar yangi pleylistga oʻtkazilsinmi?',
+    replaceTakeoverOne: 'Tanlangan 1 ta qurilma quyidagini ijro etishni toʻxtatadi:',
+    replaceTakeoverOther: 'Tanlangan {{count}} ta qurilma quyidagini ijro etishni toʻxtatadi:',
+    replaceTakeoverUnknown: 'Tanlangan qurilmalar quyidagini ijro etishni toʻxtatadi:',
+    replaceRunInstead: 'va oʻrniga <0>«{{name}}»</0>ni ijro etadi.',
+    replaceKeepsOne: 'Yana 1 ta qurilma shu kontentda qoladi.',
+    replaceKeepsOther: 'Yana {{count}} ta qurilma shu kontentda qoladi.',
+    replaceResumes: '«{{name}}» {{date}} dan qayta davom etadi.',
     newPlaylistFallback: 'yangi pleylist',
-    replaceConfirmLabel: 'Almashtirib tayinlash',
+    replaceConfirmLabel: 'Oʻtkazib tayinlash',
   } satisfies typeof en,
 };

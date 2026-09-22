@@ -9,6 +9,7 @@ vi.mock('../../http', () => ({
 import { http } from '../../http';
 import {
   getContent,
+  getContentSummary,
   listContent,
   retranscodeContent,
   softDeleteContent,
@@ -309,5 +310,97 @@ describe('retranscodeContent', () => {
     await expect(retranscodeContent(7)).rejects.toBe(err);
     const surface = err as { response?: { data?: { message?: string } } };
     expect(surface.response?.data?.message).toBe('Content is not in a retryable status (READY).');
+  });
+});
+
+describe('listContent — the optional request options', () => {
+  it('forwards a signal and toast suppression from the third argument', async () => {
+    const controller = new AbortController();
+    mockGet.mockResolvedValueOnce({ data: { content: [] } });
+
+    await listContent({}, { page: 0, size: 24, sort: 'createdAt,desc' }, {
+      signal: controller.signal,
+      suppressErrorToast: true,
+    });
+
+    expect(mockGet).toHaveBeenCalledWith('/api/content', {
+      params: { page: 0, size: 24, sort: 'createdAt,desc' },
+      signal: controller.signal,
+      _suppressErrorToast: true,
+    });
+  });
+
+  it('is additive — a two-argument call still sends exactly what it always did', async () => {
+    // Five call sites pass two arguments. A background poll that quietly
+    // started suppressing everyone else's error toasts would be a regression
+    // dressed up as a feature.
+    mockGet.mockResolvedValueOnce({ data: { content: [] } });
+
+    await listContent({ status: 'READY' }, { page: 1 });
+
+    expect(mockGet).toHaveBeenCalledWith('/api/content', {
+      params: { status: 'READY', page: 1 },
+    });
+  });
+});
+
+describe('getContentSummary', () => {
+  it('GETs the row by id and never lets the interceptor toast a miss', async () => {
+    // A miss is the EXPECTED answer here: content frames fan out unscoped, so
+    // every operator hears about files they have no grant for. A toast per
+    // foreign frame would be a wall of errors on an idle dashboard.
+    mockGet.mockResolvedValueOnce({ data: validRow({ id: 9 }) });
+
+    await getContentSummary(9);
+
+    expect(mockGet).toHaveBeenCalledWith('/api/content/9', { _suppressErrorToast: true });
+  });
+
+  it('forwards an abort signal so an unmount cancels the hydrate', async () => {
+    const controller = new AbortController();
+    mockGet.mockResolvedValueOnce({ data: validRow({ id: 9 }) });
+
+    await getContentSummary(9, { signal: controller.signal });
+
+    expect(mockGet).toHaveBeenCalledWith('/api/content/9', {
+      _suppressErrorToast: true,
+      signal: controller.signal,
+    });
+  });
+
+  it('parses a detail-shaped response into a listing row', async () => {
+    // GET /api/content/{id} returns ContentFileDetail — a superset carrying
+    // storageKey/checksum/deletedAt on top of the summary, and a thumbnailUrl
+    // presigned by the same decorator the listing uses. It has to drop
+    // straight into the grid beside rows that came from listContent.
+    mockGet.mockResolvedValueOnce({
+      data: {
+        ...validRow({ id: 9, status: 'READY', durationSeconds: 12 }),
+        thumbnailUrl: 'https://x/t.jpg',
+        storageKey: 'raw/9.mp4',
+        processedStorageKey: 'hls/9.m3u8',
+        checksum: 'sha256:abc',
+        deletedAt: null,
+      },
+    });
+
+    const row = await getContentSummary(9);
+
+    expect(row.id).toBe(9);
+    expect(row.status).toBe('READY');
+    expect(row.durationSeconds).toBe(12);
+    expect(row.thumbnailUrl).toBe('https://x/t.jpg');
+    // The four transcode-lease fields are absent from the detail record and
+    // degrade to null by design, rather than failing the parse.
+    expect(row.transcodeStartedAt).toBeNull();
+    expect(row.stalled).toBeNull();
+  });
+
+  it('rejects a payload with an unknown status rather than passing it through', async () => {
+    // Unlike `getContent`, this one validates: the row it returns is written
+    // straight into the grid, so a bad status must not reach a card.
+    mockGet.mockResolvedValueOnce({ data: { ...validRow({ id: 9 }), status: 'PROCESSING' } });
+
+    await expect(getContentSummary(9)).rejects.toThrow('status');
   });
 });

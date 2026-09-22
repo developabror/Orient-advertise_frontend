@@ -320,3 +320,44 @@ describe('ContentUploader — size cap & 413 (content-1)', () => {
     expect(await screen.findByText(/file is too large \(server limit is 50 MB\)/i)).toBeInTheDocument();
   });
 });
+
+// The 202 hand-off (B5).
+//
+// `onUploadAccepted` fires the moment the upload is accepted, carrying the
+// server id. Nothing else can announce a brand-new row: it is UPLOADED, and
+// UPLOADED is the one status CONTENT_STATUS_CHANGE never broadcasts.
+//
+// Worth stating why this is a test at all: every other render in this file
+// passes no props, so `onItemReadyRef.current?.()` and its sibling are silent
+// no-ops throughout. A callback nothing asserts on is a callback that can be
+// dropped from the wiring without a single test noticing — which is how the
+// grid shipped without a live update.
+describe('ContentUploader — the 202 hand-off (B5)', () => {
+  it('announces the new content id exactly once, as soon as the upload is accepted', async () => {
+    const onUploadAccepted = vi.fn();
+    const { container } = render(<ContentUploader onUploadAccepted={onUploadAccepted} />);
+
+    selectVideo(container);
+
+    await screen.findByText('Transcoding on server…');
+    // Stringified to match the id type the rest of the app keys rows by.
+    expect(onUploadAccepted).toHaveBeenCalledTimes(1);
+    expect(onUploadAccepted).toHaveBeenCalledWith('123');
+  });
+
+  it('does not announce an upload the server rejected', async () => {
+    vi.mocked(http.post).mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 413, data: {} },
+      config: {},
+      toJSON: () => ({}),
+    });
+    const onUploadAccepted = vi.fn();
+    const { container } = render(<ContentUploader onUploadAccepted={onUploadAccepted} />);
+
+    selectVideo(container);
+
+    await screen.findByText(/too large/i);
+    expect(onUploadAccepted).not.toHaveBeenCalled();
+  });
+});

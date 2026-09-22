@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { http } from '@api/http';
+import { tashkentDayEndUtc, tashkentDayStartUtc } from '@/lib/timezone';
 
 export interface PerDeviceRow {
   readonly deviceId: string;
@@ -106,8 +107,8 @@ export const useAdvertiserContentDetail = (
         // need totals + perDevice here, so request the smallest possible page
         // — timestamps are fetched separately by the plays hook.
         params: {
-          from: `${filter.dateFrom}T00:00:00Z`,
-          to: `${filter.dateTo}T23:59:59Z`,
+          from: tashkentDayStartUtc(filter.dateFrom),
+          to: tashkentDayEndUtc(filter.dateTo),
           page: 0,
           size: 1,
         },

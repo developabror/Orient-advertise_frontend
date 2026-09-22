@@ -442,6 +442,72 @@ describe('parseOverlapDetails', () => {
     expect('conflictingDeviceIds' in result!.conflicts[2]!).toBe(false);
   });
 
+  it('parses remainingDeviceCount when the backend reports the surviving devices', () => {
+    // Partial-device supersede: the predecessor keeps driving 3 devices that
+    // lie outside the submitted scope.
+    const result = parseOverlapDetails(
+      overlapBody({
+        conflicts: [
+          {
+            id: 6,
+            startTime: '2026-06-04T14:37:00Z',
+            endTime: '2026-06-04T18:00:00Z',
+            remainingDeviceCount: 3,
+          },
+        ],
+      }),
+    );
+    expect(result!.conflicts[0]!.remainingDeviceCount).toBe(3);
+  });
+
+  it('keeps a remainingDeviceCount of 0 (fully covered) distinct from "not reported"', () => {
+    // 0 is meaningful — the predecessor really is retired in full — so it must
+    // survive the parse rather than being folded into undefined.
+    const result = parseOverlapDetails(
+      overlapBody({
+        conflicts: [
+          {
+            id: 6,
+            startTime: '2026-06-04T14:37:00Z',
+            endTime: '2026-06-04T18:00:00Z',
+            remainingDeviceCount: 0,
+          },
+        ],
+      }),
+    );
+    expect(result!.conflicts[0]!.remainingDeviceCount).toBe(0);
+    expect('remainingDeviceCount' in result!.conflicts[0]!).toBe(true);
+  });
+
+  it('omits remainingDeviceCount when absent (backend without partial-device supersede)', () => {
+    const result = parseOverlapDetails(
+      overlapBody({
+        conflicts: [{ id: 6, startTime: '2026-06-04T14:37:00Z', endTime: '2026-06-04T18:00:00Z' }],
+      }),
+    );
+    expect('remainingDeviceCount' in result!.conflicts[0]!).toBe(false);
+    expect(result!.conflicts[0]!.remainingDeviceCount).toBeUndefined();
+  });
+
+  it('omits a non-numeric / non-finite remainingDeviceCount rather than coercing it', () => {
+    const result = parseOverlapDetails(
+      overlapBody({
+        conflicts: [
+          // String → dropped, conflict kept.
+          { id: 6, startTime: '2026-06-04T14:37:00Z', endTime: '2026-06-04T18:00:00Z', remainingDeviceCount: '3' },
+          // NaN → dropped.
+          { id: 7, startTime: '2026-06-04T14:37:00Z', endTime: '2026-06-04T18:00:00Z', remainingDeviceCount: Number.NaN },
+          // null → dropped.
+          { id: 8, startTime: '2026-06-04T14:37:00Z', endTime: '2026-06-04T18:00:00Z', remainingDeviceCount: null },
+        ],
+      }),
+    );
+    expect(result!.conflicts).toHaveLength(3);
+    for (const c of result!.conflicts) {
+      expect('remainingDeviceCount' in c).toBe(false);
+    }
+  });
+
   it('returns null for a 409 without the structured details (older backend)', () => {
     expect(parseOverlapDetails({ message: 'Time overlap …', status: 409 })).toBeNull();
   });

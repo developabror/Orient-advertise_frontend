@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { http } from '@api/http';
 import type { ReportFilter } from './useUptimeReport';
+import { tashkentDayEndUtc, tashkentDayStartUtc } from '@/lib/timezone';
 
 export interface IncidentSummaryRow {
   readonly id: string;
@@ -91,8 +92,8 @@ const filterKey = (filter: ReportFilter | null): string => {
 
 const buildParams = (filter: ReportFilter): Record<string, string> => {
   const params: Record<string, string> = {
-    from: `${filter.dateFrom}T00:00:00Z`,
-    to: `${filter.dateTo}T23:59:59Z`,
+    from: tashkentDayStartUtc(filter.dateFrom),
+    to: tashkentDayEndUtc(filter.dateTo),
   };
   // Spec only accepts facilityId — region scoping isn't supported here.
   if (filter.facility) params.facilityId = filter.facility;

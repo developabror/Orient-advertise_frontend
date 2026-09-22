@@ -23,7 +23,9 @@ vi.mock('../env', () => ({
 // Capture the config axios.create was called with, and stub .post so each
 // test can dictate the response per-call. Interceptors are stubbed to no-ops
 // since these tests exercise the function exports directly, not the 401
-// retry interceptor (that has its own coverage path via wsClient.test.ts).
+// retry interceptor — that lives in httpInterceptors.test.ts, which swaps only
+// the transport so the real interceptor chain runs. (This comment used to claim
+// wsClient.test.ts covered it; that file mocks refreshOnce, so it never did.)
 // vi.hoisted is needed because vi.mock factories run BEFORE top-level vars
 // initialize — without hoisting these refs would be TDZ at mock-time.
 const { createSpy, postSpy } = vi.hoisted(() => ({

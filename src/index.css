@@ -2196,6 +2196,17 @@ body {
   font-size: 0.875rem;
 }
 
+/* Per-conflict "N other devices stay on this content" line — same muted
+   fineprint treatment as the schedule summary, one step down from the
+   conflict it belongs to. */
+.oa-confirm__keeps {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--oa-text-muted-2);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
 .oa-schedule__summary {
   padding: 0.75rem 1rem;
   background: var(--oa-surface-subtle);
@@ -4722,6 +4733,13 @@ button.oa-playlist__item:disabled {
   align-items: flex-end;
   justify-content: space-between;
   gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.oa-settings-page__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
   flex-wrap: wrap;
 }
 

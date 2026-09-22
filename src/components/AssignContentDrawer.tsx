@@ -17,7 +17,7 @@ import {
   parseOverlapDetails,
   type AssignmentConflict,
 } from '@api/resources/assignments';
-import { formatTashkent } from '@/lib/timezone';
+import { formatTashkent, tashkentLocalToUTC, utcToTashkentLocal } from '@/lib/timezone';
 import { useAssignmentTargets, type TargetType } from '@hooks/useAssignmentTargets';
 import {
   useAssignmentPreview,
@@ -67,18 +67,15 @@ const INDEFINITE_END_TIME_ISO = new Date('2100-01-01T00:00:00Z').toISOString();
 const INDEFINITE_END_TIME_MS = new Date(INDEFINITE_END_TIME_ISO).getTime();
 
 // `<input type="datetime-local">` reads/writes a local-naive "YYYY-MM-DDTHH:mm"
-// string, and the submit path serializes it with `new Date(value).toISOString()`
-// — i.e. interpreted in the *browser's* local zone. For the product's users
-// (all in Tashkent) that local zone IS Tashkent, so the `min` we compute here
-// must use the same local clock as the input, NOT a forced Tashkent offset, or
-// it would disagree with what the picker shows. (Display of already-stored UTC
-// instants — e.g. conflict windows — still goes through `formatTashkent`.)
-const toLocalInputValue = (d: Date): string => {
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
-};
+// string with no zone of its own, so SOMETHING has to say which zone it means.
+// Every such value in this drawer means TASHKENT, matching ContentSchedulesDrawer
+// and the rest of the product (`src/lib/timezone.ts`). Previously the picker
+// bound and the submit path both went through the *browser's* zone — self
+// consistent, and identical to Tashkent for our operators, but it silently
+// scheduled in the wrong zone for anyone travelling or on a mis-set machine,
+// and it disagreed with the schedules drawer. The `min`, both validations, the
+// resume label and the POST body must all use the same zone or the preview
+// stops matching what is sent.
 
 // Fallback for a 409 we can't break down into named conflicts (older backend,
 // or any other overlap shape). Still avoids the raw developer string.
@@ -146,8 +143,8 @@ export const AssignContentDrawer = ({ isOpen, onClose }: Props) => {
   const [targetType, setTargetType] = useState<TargetType>('region');
   const [targetId, setTargetId] = useState('');
 
-  // Only fetch playlists once the drawer is open — avoids burning a request
-  // on every page mount.
+  // Only fetch playlists/targets once the drawer is open — avoids burning
+  // requests on every page mount.
   const {
     playlists,
     isLoading: playlistsLoading,
@@ -155,7 +152,7 @@ export const AssignContentDrawer = ({ isOpen, onClose }: Props) => {
     retry: retryPlaylists,
   } = usePlaylistOptions(isOpen);
 
-  const { targets, isLoading, error, retry } = useAssignmentTargets(targetType);
+  const { targets, isLoading, error, retry } = useAssignmentTargets(targetType, isOpen);
 
   const [selection, setSelection] = useState<DeviceSelection>(EMPTY_SELECTION);
 
@@ -393,7 +390,7 @@ export const AssignContentDrawer = ({ isOpen, onClose }: Props) => {
   // `min` for the start picker = the current local minute, recomputed each
   // render so it tracks wall-clock time. Past starts can't be picked from the
   // calendar; `scheduleError` below also rejects a typed-in past start.
-  const minStartLocal = toLocalInputValue(new Date());
+  const minStartLocal = utcToTashkentLocal(new Date().toISOString());
 
   // Completeness: a required field is still empty and the operator hasn't opted
   // into the explicit "now" / "indefinite" alternative. Surfaced as guidance
@@ -409,20 +406,37 @@ export const AssignContentDrawer = ({ isOpen, onClose }: Props) => {
   // feed concrete bounds into the comparison so ordering is still checked.
   const scheduleError: string | null = useMemo(() => {
     if (!startNow && startAt !== '') {
-      const startMs = new Date(startAt).getTime();
+      const startMs = Date.parse(tashkentLocalToUTC(startAt));
       // One-minute grace: datetime-local has minute granularity, so a start
       // picked "this minute" can land a few seconds behind Date.now().
       if (Number.isFinite(startMs) && startMs < Date.now() - 60_000) {
         return t('assignContentDrawer.startInPast');
       }
     }
-    const startMs = startNow ? Date.now() : new Date(startAt).getTime();
-    const endMs = noEndDate ? INDEFINITE_END_TIME_MS : new Date(endAt).getTime();
+    const startMs = startNow ? Date.now() : Date.parse(tashkentLocalToUTC(startAt));
+    const endMs = noEndDate ? INDEFINITE_END_TIME_MS : Date.parse(tashkentLocalToUTC(endAt));
     if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs <= startMs) {
       return t('assignContentDrawer.endAfterStart');
     }
     return null;
   }, [startNow, noEndDate, startAt, endAt, t]);
+
+  // When THIS assignment ends — i.e. the instant every conflict it does not
+  // outlast starts playing again. The backend keeps a replaced assignment
+  // CONFIRMED and simply outranks it for the new window, so an operator who
+  // books a one-week campaign over an open-ended booking gets the booking back
+  // automatically; the Replace dialog has to say so, or "Move & assign" still
+  // reads as a permanent deletion.
+  //
+  // `null` = nothing ever resumes: "no end date" (the new assignment runs to the
+  // year-2100 sentinel and outlasts everything) or a window the operator has not
+  // finished filling in. Never guess a date in those cases.
+  const resumeAt = useMemo<{ ms: number; label: string } | null>(() => {
+    if (noEndDate) return null;
+    const ms = Date.parse(tashkentLocalToUTC(endAt));
+    if (!Number.isFinite(ms) || ms >= INDEFINITE_END_TIME_MS) return null;
+    return { ms, label: formatTashkent(new Date(ms).toISOString()) };
+  }, [noEndDate, endAt]);
 
   // How many of the operator's selected devices clash, and the denominator to
   // show. `count` is the DEDUPED union of `conflictingDeviceIds` across all
@@ -512,15 +526,14 @@ export const AssignContentDrawer = ({ isOpen, onClose }: Props) => {
       playlistId,
       targetType: targetTypeApi,
       targetId: Number.isFinite(targetIdNum) ? targetIdNum : 0,
-      // "Start now" → this instant; otherwise the operator's explicit local
-      // time. `new Date(local).toISOString()` interprets the picker value in
-      // the browser zone (Tashkent for our users) — the correct, unchanged
-      // conversion; do NOT force/strip a tz here.
-      startTime: startNow ? new Date().toISOString() : new Date(startAt).toISOString(),
+      // "Start now" → this instant; otherwise the operator's explicit picker
+      // value, read as TASHKENT local (see the datetime-local note at the top
+      // of this file).
+      startTime: startNow ? new Date().toISOString() : tashkentLocalToUTC(startAt),
       // "No end date" → far-future sentinel (the device keeps the content until
       // the assignment is cancelled). Only sent when explicitly chosen, never
       // as a silent fallback for a blank field.
-      endTime: noEndDate ? INDEFINITE_END_TIME_ISO : new Date(endAt).toISOString(),
+      endTime: noEndDate ? INDEFINITE_END_TIME_ISO : tashkentLocalToUTC(endAt),
     };
     const draftRes = await http.post<unknown>('/api/assignments', draftBody, {
       _suppressErrorToast: true,
@@ -607,37 +620,25 @@ export const AssignContentDrawer = ({ isOpen, onClose }: Props) => {
     }
   };
 
-  // Supersede the conflicting assignment(s) and put the new content live.
-  // Atomic first (confirm with `replaceConflicting: true`); if the backend
-  // doesn't honor it (still 409s), fall back to cancelling each conflict then
-  // re-confirming the same draft. Invoked only after the explicit confirm
-  // dialog. Failures land back in the overlap panel so the operator can retry.
+  // Hand the selected devices over to the new content: ONE atomic confirm with
+  // `replaceConflicting: true`. The server narrows each conflicting predecessor
+  // to the devices outside this scope — devices the operator didn't select keep
+  // playing what they play now.
+  //
+  // There is deliberately NO fallback. The obvious one — DELETE each conflict,
+  // then re-confirm — is destructive: `DELETE /api/assignments/{id}` has no
+  // device scoping, so it retires the predecessor for EVERY device it drives
+  // and strips the playlist from the unselected ones. That fallback was the
+  // client-side half of the "reassigning some devices blanks the others" bug;
+  // a persistent 409 here is a genuine failure and is surfaced inline instead.
+  // Invoked only after the explicit confirm dialog.
   const replaceAndAssign = async (): Promise<void> => {
     if (overlap === null) return;
     setSubmitting(true);
     setReplaceError(null);
     try {
       const draftId = await createDraftAndGetId();
-      try {
-        await postConfirm(draftId, true);
-      } catch (err: unknown) {
-        // Anything other than a persistent overlap is a genuine failure.
-        if (!isOverlap409(err)) throw err;
-        // Backend ignored `replaceConflicting` (older build): remove the
-        // conflicts ourselves, then re-confirm the unobstructed draft.
-        for (const c of overlap.conflicts) {
-          try {
-            await http.delete(`/api/assignments/${encodeURIComponent(String(c.id))}`, {
-              _suppressErrorToast: true,
-            });
-          } catch (delErr: unknown) {
-            // 404 = the conflict was already removed (e.g. another operator) —
-            // exactly the state we wanted, so continue. Anything else is real.
-            if (!(axios.isAxiosError(delErr) && delErr.response?.status === 404)) throw delErr;
-          }
-        }
-        await postConfirm(draftId, false);
-      }
+      await postConfirm(draftId, true);
       notify.success(t('assignContentDrawer.replacedSuccess', { label: assignedDevicesLabel }));
       setReplaceConfirmOpen(false);
       setSubmitting(false);
@@ -1149,6 +1150,9 @@ export const AssignContentDrawer = ({ isOpen, onClose }: Props) => {
                 <p className="oa-schedule__summary-fineprint">
                   {t('assignContentDrawer.summaryFineprint')}
                 </p>
+                <p className="oa-schedule__summary-fineprint">
+                  {t('assignContentDrawer.syncGroupFineprint')}
+                </p>
               </div>
             </div>
           )}
@@ -1174,23 +1178,56 @@ export const AssignContentDrawer = ({ isOpen, onClose }: Props) => {
       <ConfirmDialog
         isOpen={replaceConfirmOpen}
         title={t('assignContentDrawer.replaceTitle')}
-        // Names exactly what is removed and what replaces it — this is
-        // destructive (it supersedes a live, confirmed assignment), so the
-        // operator must opt in with full knowledge, never automatically.
+        // A hand-over, not a deletion: the server narrows each conflicting
+        // assignment to the devices OUTSIDE this scope, so only the operator's
+        // selected devices change what they play. Still destructive for those
+        // screens, so the operator opts in explicitly, never automatically.
         message={
           overlap === null ? (
             ''
           ) : (
             <>
               <p>
-                {overlap.conflicts.length > 1
-                  ? t('assignContentDrawer.replaceRemoveOther')
-                  : t('assignContentDrawer.replaceRemoveOne')}
+                {overlapClash.count === 0
+                  ? // An older backend omits `conflictingDeviceIds`, so the
+                    // affected count is unknown — say so rather than invent one.
+                    t('assignContentDrawer.replaceTakeoverUnknown')
+                  : t(
+                      overlapClash.count === 1
+                        ? 'assignContentDrawer.replaceTakeoverOne'
+                        : 'assignContentDrawer.replaceTakeoverOther',
+                      { count: overlapClash.count },
+                    )}
               </p>
               <ul className="oa-confirm__list">
                 {overlap.conflicts.map((c) => (
                   <li key={c.id}>
                     <strong>{conflictPlaylistLabel(t, c)}</strong> — {formatConflictWindow(t, c)}
+                    {/* What survives the hand-over. Server-supplied only: a
+                        backend without partial-device supersede sends nothing
+                        and this line stays absent — never a guessed number. */}
+                    {c.remainingDeviceCount !== undefined && c.remainingDeviceCount > 0 && (
+                      <span className="oa-confirm__keeps">
+                        {t(
+                          c.remainingDeviceCount === 1
+                            ? 'assignContentDrawer.replaceKeepsOne'
+                            : 'assignContentDrawer.replaceKeepsOther',
+                          { count: c.remainingDeviceCount },
+                        )}
+                      </span>
+                    )}
+                    {/* …and when this assignment ends FIRST, the conflict is not
+                        retired at all — it resumes on its own. An unparseable
+                        endTime yields NaN, which fails this test, so the line is
+                        absent rather than dated "Invalid Date". */}
+                    {resumeAt !== null && new Date(c.endTime).getTime() > resumeAt.ms && (
+                      <span className="oa-confirm__keeps">
+                        {t('assignContentDrawer.replaceResumes', {
+                          name: conflictPlaylistLabel(t, c),
+                          date: resumeAt.label,
+                        })}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>

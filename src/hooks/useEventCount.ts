@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { http } from '@api/http';
 import type { EventFilter } from './useEvents';
+import { tashkentDayEndUtc, tashkentDayStartUtc } from '@/lib/timezone';
 
 export interface UseEventCountResult {
   readonly count: number | null;
@@ -15,8 +16,15 @@ const buildParams = (filter: EventFilter): Record<string, string> => {
   const params: Record<string, string> = {};
   if (filter.deviceId) params.deviceId = filter.deviceId;
   if (filter.facility) params.facilityId = filter.facility;
-  if (filter.dateFrom) params.from = filter.dateFrom;
-  if (filter.dateTo) params.to = filter.dateTo;
+  // The backend binds these as `Instant` (@DateTimeFormat ISO.DATE_TIME), so a
+  // bare 'YYYY-MM-DD' does not parse and the request 400s — the date filter has
+  // never worked. Send the Tashkent day's real UTC bounds instead, and drop the
+  // key outright if the URL carried something unparseable rather than sending
+  // an empty param the backend would also reject.
+  const from = tashkentDayStartUtc(filter.dateFrom);
+  if (from !== '') params.from = from;
+  const to = tashkentDayEndUtc(filter.dateTo);
+  if (to !== '') params.to = to;
   if (filter.priorities.length > 0) {
     params.priority = String(filter.priorities[0]).toUpperCase();
   }

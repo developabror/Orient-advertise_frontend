@@ -56,6 +56,12 @@ export interface DeviceDetail {
    * path is what actually rejects a box that can't do this.
    */
   readonly remoteCapability: RemoteCapability | null;
+  /**
+   * End of the admin-opened re-registration window (ISO-8601 instant), or null
+   * when none is open. A past instant means the window has already lapsed —
+   * callers compare against the clock before treating it as open.
+   */
+  readonly reregistrationAllowedUntil: string | null;
 }
 
 export type DeviceFetchState =
@@ -90,6 +96,11 @@ const sanitizeRemoteCapability = (value: unknown): RemoteCapability | null => {
     reportedAt: typeof v.reportedAt === 'string' ? v.reportedAt : null,
   };
 };
+
+// ISO instant or null. A non-string or unparseable value parses to null
+// (= no window) rather than failing the device load.
+const instantOrNull = (value: unknown): string | null =>
+  typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null;
 
 const idStr = (v: unknown): string | null => {
   if (typeof v === 'string' && v !== '') return v;
@@ -180,6 +191,7 @@ const sanitizeDevice = (value: unknown): DeviceDetail | null => {
     status: reconcileStatus(v.computedStatus ?? v.status, lastSeen),
     activePlaylist: null,
     remoteCapability: sanitizeRemoteCapability(v.remoteCapability),
+    reregistrationAllowedUntil: instantOrNull(v.reregistrationAllowedUntil),
   };
 };
 

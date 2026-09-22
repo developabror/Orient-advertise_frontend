@@ -1,6 +1,7 @@
 const en = {
   // Page header / filters
   title: 'Playlists',
+  assignContent: 'Assign content',
   newPlaylist: '+ New playlist',
   project: 'Project',
   name: 'Name',
@@ -92,6 +93,7 @@ export const dict = {
   ru: {
     // Page header / filters
     title: 'Плейлисты',
+    assignContent: 'Назначить контент',
     newPlaylist: '+ Новый плейлист',
     project: 'Проект',
     name: 'Название',
@@ -180,6 +182,7 @@ export const dict = {
   uz: {
     // Page header / filters
     title: 'Pleylistlar',
+    assignContent: 'Kontent biriktirish',
     newPlaylist: '+ Yangi pleylist',
     project: 'Loyiha',
     name: 'Nomi',
