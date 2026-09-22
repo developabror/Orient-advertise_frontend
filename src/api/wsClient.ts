@@ -1,3 +1,4 @@
+import { tokenToUser } from './auth';
 import { env } from './env';
 import { refreshOnce } from './http';
 import type { IncidentDto } from './resources/incidents';
@@ -259,7 +260,15 @@ class WsClient {
   // assertable from a test.
   private droppedFrames: Record<DroppedFrameReason, number> = { ...ZERO_DROPS };
   private retryTimer: number | null = null;
-  private intentionalClose = false;
+  // A token refresh after an auth close is in flight; its continuation reopens the socket.
+  private refreshInFlight = false;
+  // Bumped by every disconnect(). An async continuation that started under an older
+  // generation (a refresh that resolves after logout) must not reopen anything.
+  private generation = 0;
+  // connect() was called and disconnect() has not been since: the session wants a live feed.
+  private wanted = false;
+  // The user whose token the current connection authenticated with.
+  private sessionSub: string | null = null;
   // Token used for the current/most-recent connect attempt. Forwarded to
   // refreshOnce() on auth-driven closes so the coalescer knows which token
   // was rejected and can short-circuit if another tab has already rotated.
@@ -267,21 +276,72 @@ class WsClient {
   private readonly statusListeners = new Set<StatusListener>();
   private readonly eventListeners = new Set<AnyEventListener>();
 
+  constructor() {
+    tokenStore.subscribe((token) => {
+      this.onTokenChange(token);
+    });
+  }
+
+  /**
+   * Ensure a connection is live or on its way. A no-op while a socket exists (connecting or open),
+   * a retry is scheduled, or a token refresh is in flight — each of those already ends in exactly
+   * one socket. This used to open a new socket whenever the status was not `open`/`connecting`,
+   * i.e. during every backoff and pause, while the pending retry then opened another one (FE-02):
+   * two live sockets delivering every event twice, one of which nothing would ever close.
+   */
   connect(): void {
-    if (this.status === 'open' || this.status === 'connecting') return;
-    this.intentionalClose = false;
+    this.wanted = true;
+    if (this.socket !== null || this.retryTimer !== null || this.refreshInFlight) return;
     this.openSocket();
   }
 
+  /**
+   * Close the connection and cancel everything that could reopen it: the pending retry, and any
+   * in-flight refresh continuation (via {@link generation}). The socket is detached before it is
+   * closed, so its close event is ignored rather than scheduling a reconnect.
+   */
   disconnect(): void {
-    this.intentionalClose = true;
+    this.generation += 1;
+    this.wanted = false;
+    this.sessionSub = null;
+    this.refreshInFlight = false;
     this.clearRetry();
-    if (this.socket) {
-      this.socket.close(1000, 'client disconnect');
-      this.socket = null;
-    }
+    this.closeCurrentSocket('client disconnect');
     this.failures = 0;
     this.setStatus('idle');
+  }
+
+  /**
+   * Follow the session's token — in the same task that changes it, not in a React effect a task or
+   * two later, while a message for the previous user could still be delivered.
+   *
+   * - A different user, or none: end this connection now. It authenticated as the previous user at
+   *   handshake. The owner (AuthProvider) reconnects for the new user.
+   * - A new token for the same user while the feed is down (backing off, paused, or idle after a
+   *   refresh that failed without ending the session): reconnect now. The failure was about the old
+   *   token and REST has since got a fresh one; before FE-02 this happened by accident, because
+   *   AuthProvider called connect() on every token rotation.
+   * - A live or connecting socket, or a refresh in flight (whose continuation reopens), is left alone.
+   */
+  private onTokenChange(token: string | null): void {
+    if (!this.wanted) return;
+    // Only a token that decodes can prove a different user; one that doesn't is AuthProvider's to
+    // judge (it signs such a session out, which disconnects).
+    const sub = tokenToUser(token)?.sub ?? null;
+    if (token === null || (sub !== null && this.sessionSub !== null && sub !== this.sessionSub)) {
+      this.disconnect();
+      return;
+    }
+    if (this.socket !== null || this.refreshInFlight) return;
+    this.clearRetry();
+    this.failures = 0;
+    this.openSocket();
+  }
+
+  private closeCurrentSocket(reason: string): void {
+    const socket = this.socket;
+    this.socket = null;
+    socket?.close(1000, reason);
   }
 
   getStatus(): WsStatus {
@@ -341,27 +401,42 @@ class WsClient {
       return;
     }
     this.currentAttemptToken = token;
+    this.sessionSub = tokenToUser(token)?.sub ?? this.sessionSub;
+    const generation = this.generation;
     this.setStatus(this.failures === 0 ? 'connecting' : 'reconnecting');
+    // A status listener may have called disconnect(); then there is nothing to open.
+    if (generation !== this.generation) return;
 
+    // Never two sockets: a previous one is detached and closed before its replacement exists.
+    this.closeCurrentSocket('replaced');
     let socket: WebSocket;
     try {
       socket = new WebSocket(
         `${env.wsUrl}/dashboard?access_token=${encodeURIComponent(token)}`,
       );
     } catch {
-      this.scheduleRetry();
+      // A failure like any other, so a constructor that keeps throwing (a malformed VITE_WS_URL, a
+      // blocked scheme) backs off into a pause instead of retrying every second forever.
+      this.onConnectionFailure();
       return;
     }
     this.socket = socket;
 
+    // Every handler first checks that its socket is still the current one. A socket that was
+    // replaced or disconnected may still deliver frames (the previous user's, after a logout) and
+    // will still fire `close` — which used to null out the CURRENT socket, so that one could never
+    // be closed either.
     socket.addEventListener('open', () => {
+      if (socket !== this.socket) return;
       this.failures = 0;
       this.setStatus('open');
     });
     socket.addEventListener('message', (e: MessageEvent<unknown>) => {
+      if (socket !== this.socket) return;
       this.handleMessage(e);
     });
     socket.addEventListener('close', (e: CloseEvent) => {
+      if (socket !== this.socket) return;
       this.handleClose(e);
     });
     socket.addEventListener('error', () => {
@@ -403,12 +478,10 @@ class WsClient {
     );
   }
 
+  // Only ever called for the current socket (see openSocket), so it is never an intentional close:
+  // disconnect() and a replacement both detach the socket before closing it.
   private handleClose(event: CloseEvent): void {
     this.socket = null;
-    if (this.intentionalClose) {
-      this.setStatus('idle');
-      return;
-    }
     if (this.isAuthClose(event)) {
       // Server rejected our token. Refresh BEFORE retrying — otherwise we'd
       // bounce off /dashboard with the same stale token, get closed again,
@@ -418,6 +491,10 @@ class WsClient {
       void this.handleAuthClose();
       return;
     }
+    this.onConnectionFailure();
+  }
+
+  private onConnectionFailure(): void {
     this.failures += 1;
     if (this.failures >= PAUSE_AFTER_FAILURES) {
       // Proxy/firewall likely blocking WS — degrade gracefully and try again
@@ -426,6 +503,8 @@ class WsClient {
       this.scheduleRetry(PAUSE_RETRY_MS);
       return;
     }
+    // Not 'open' any more: without this the indicator kept saying "live" for the whole backoff.
+    this.setStatus('reconnecting');
     this.scheduleRetry();
   }
 
@@ -435,6 +514,8 @@ class WsClient {
   }
 
   private async handleAuthClose(): Promise<void> {
+    const generation = this.generation;
+    this.refreshInFlight = true;
     this.setStatus('reconnecting');
     try {
       // refreshOnce coalesces with REST refreshes (per-tab Promise dedup) and
@@ -442,8 +523,10 @@ class WsClient {
       // refreshAccessToken() directly would risk concurrent /auth/refresh
       // requests, and the spec rotates the refresh token on every call.
       await refreshOnce(this.currentAttemptToken);
-      // disconnect() may have fired during the refresh await; respect it.
-      if (this.intentionalClose) return;
+      // disconnect() may have fired during the refresh await (a logout, or a different user
+      // signing in); this continuation belongs to that ended session and must not reopen.
+      if (generation !== this.generation) return;
+      this.refreshInFlight = false;
       // Reset the failure budget — auth-driven closes shouldn't accumulate
       // toward the network-failure pause threshold. tokenStore now has the
       // rotated pair; the 0-delay retry yields to the event loop and lets
@@ -456,8 +539,10 @@ class WsClient {
       // REST call's 401 will trip http.ts's interceptor, which is the
       // canonical owner of session teardown (AuthProvider listens on the
       // auth channel and routes to /login). We just stop trying.
+      if (generation !== this.generation) return;
+      this.refreshInFlight = false;
       this.failures = 0;
-      if (!this.intentionalClose) this.setStatus('idle');
+      this.setStatus('idle');
     }
   }
 

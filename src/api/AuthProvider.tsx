@@ -94,12 +94,21 @@ export const AuthProvider = ({ children }: Props) => {
     };
   }, []);
 
-  // Tie the WS lifecycle to auth state. wsClient.connect/disconnect are
-  // idempotent — token refresh re-runs this effect but won't churn the socket.
+  // Tie the WS lifecycle to WHO is signed in, not to the user object: it is
+  // replaced on every token rotation and when /me loads, and none of those
+  // should touch the socket. A different `sub` — another tab signed in as
+  // someone else, which swaps the token without passing through logout —
+  // must: the socket authenticated as the previous user at handshake and would
+  // keep streaming their events here (FE-02). The cleanup disconnects on
+  // logout, on a user switch (before the new user's connect) and on unmount.
+  const sub = user?.sub ?? null;
   useEffect(() => {
-    if (user) wsClient.connect();
-    else wsClient.disconnect();
-  }, [user]);
+    if (sub === null) return;
+    wsClient.connect();
+    return () => {
+      wsClient.disconnect();
+    };
+  }, [sub]);
 
   // Fetch /api/me to populate `user.profile` for display fields. Runs
   // only when:

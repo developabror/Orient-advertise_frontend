@@ -62,7 +62,12 @@ class MockWebSocket {
     // 'error' listeners are intentionally dropped.
   }
   removeEventListener(): void {}
-  close(): void {}
+  // Recorded, not dispatched: a real socket's close event arrives later and
+  // asynchronously, so tests fire it explicitly with simulateClose().
+  closeCode: number | null = null;
+  close(code?: number): void {
+    this.closeCode = code ?? 1005;
+  }
   send(): void {}
 
   // Test-only helper: dispatches a synthetic CloseEvent to every listener
@@ -691,5 +696,288 @@ describe('wsClient — handleMessage delivery and dropped-frame accounting', () 
     expect(received).toHaveLength(1);
     expect(wsClient.getDroppedFrames()['rejected-by-guard']).toBe(0);
     unsub();
+  });
+});
+
+// FE-02. One socket at a time, and nothing from an old one ever reaches a
+// listener. Before this, connect() opened a second socket whenever the status
+// was not open/connecting — during every backoff, pause and token refresh —
+// while the pending retry opened another; events arrived twice, disconnect()
+// closed only the newest socket, and the orphan kept streaming the previous
+// user's events to whoever signed in next in the tab.
+describe('wsClient — one socket at a time (FE-02)', () => {
+  const INCIDENT =
+    '{"type":"INCIDENT_CRITICAL","incidentId":9,"deviceId":3,"eventType":"DEVICE_OFFLINE",' +
+    '"status":"OPEN","priority":"CRITICAL","description":"offline",' +
+    '"openedAt":null,"updatedAt":null,"actor":null}';
+
+  const socketAt = (i: number): MockWebSocket => {
+    const socket = MockWebSocket.instances[i];
+    if (socket === undefined) throw new Error(`no socket #${String(i)}`);
+    return socket;
+  };
+
+  let received: unknown[];
+  let unsub: () => void;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    MockWebSocket.instances = [];
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = MockWebSocket;
+    mockRefreshOnce.mockReset();
+    wsClient.disconnect();
+    tokenStore.set('user-a-token');
+    received = [];
+    unsub = wsClient.onEvent('INCIDENT_CRITICAL', (e) => {
+      received.push(e);
+    });
+  });
+
+  afterEach(() => {
+    unsub();
+    wsClient.disconnect();
+    tokenStore.set(null);
+    mockRefreshOnce.mockReset();
+    vi.useRealTimers();
+    if (realWebSocket !== undefined) {
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = realWebSocket;
+    }
+  });
+
+  it('connect() during a backoff opens nothing; the retry opens exactly one socket', async () => {
+    wsClient.connect();
+    socketAt(0).simulateOpen();
+    socketAt(0).simulateClose(1006);
+    expect(wsClient.getStatus()).toBe('reconnecting');
+
+    wsClient.connect();
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it('connect() while a reconnect attempt is still connecting opens nothing', async () => {
+    wsClient.connect();
+    socketAt(0).simulateClose(1006);
+    await vi.advanceTimersByTimeAsync(60_000); // retry socket #1 is now connecting
+    expect(wsClient.getStatus()).toBe('reconnecting');
+
+    wsClient.connect();
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it('connect() while paused opens nothing until the pause ends', async () => {
+    wsClient.connect();
+    for (let i = 0; i < 5; i++) {
+      socketAt(MockWebSocket.instances.length - 1).simulateClose(1006);
+      if (wsClient.getStatus() !== 'paused') await vi.advanceTimersByTimeAsync(60_000);
+    }
+    expect(wsClient.getStatus()).toBe('paused');
+    const before = MockWebSocket.instances.length;
+
+    wsClient.connect();
+
+    expect(MockWebSocket.instances).toHaveLength(before);
+  });
+
+  it('connect() while an auth refresh is in flight ends with exactly one socket', async () => {
+    let resolveRefresh: (token: string) => void = () => undefined;
+    mockRefreshOnce.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveRefresh = (t) => {
+            tokenStore.set(t);
+            resolve(t);
+          };
+        }),
+    );
+    wsClient.connect();
+    socketAt(0).simulateClose(1008, 'token expired');
+
+    wsClient.connect();
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    resolveRefresh('rotated');
+    await vi.runAllTimersAsync();
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(socketAt(1).url).toContain('access_token=rotated');
+  });
+
+  it('a refresh that resolves after a logout and a new login does not open a second socket', async () => {
+    let resolveRefresh: (token: string) => void = () => undefined;
+    mockRefreshOnce.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveRefresh = (t) => {
+            resolve(t);
+          };
+        }),
+    );
+    wsClient.connect();
+    socketAt(0).simulateClose(1008, 'token expired');
+
+    wsClient.disconnect(); // user A logs out mid-refresh
+    tokenStore.set('user-b-token');
+    wsClient.connect(); // user B signs in
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    resolveRefresh('user-a-rotated');
+    await vi.runAllTimersAsync();
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(socketAt(1).url).toContain('access_token=user-b-token');
+  });
+
+  it("never delivers a disconnected socket's frames — not the previous user's events after a logout", () => {
+    wsClient.connect();
+    const userA = socketAt(0);
+    userA.simulateOpen();
+    wsClient.disconnect();
+    expect(userA.closeCode).toBe(1000);
+
+    tokenStore.set('user-b-token');
+    wsClient.connect();
+    const userB = socketAt(1);
+    userB.simulateOpen();
+
+    userA.simulateMessage(INCIDENT); // still in flight from the old connection
+    expect(received).toHaveLength(0);
+
+    userB.simulateMessage(INCIDENT);
+    expect(received).toHaveLength(1);
+  });
+
+  it("an old socket's close neither detaches the current socket nor schedules a reconnect", async () => {
+    wsClient.connect();
+    const old = socketAt(0);
+    wsClient.disconnect();
+    wsClient.connect();
+    const current = socketAt(1);
+    current.simulateOpen();
+
+    old.simulateClose(1006); // the browser delivers the old socket's close late
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(wsClient.getStatus()).toBe('open');
+    expect(MockWebSocket.instances).toHaveLength(2);
+    wsClient.disconnect();
+    expect(current.closeCode).toBe(1000); // still reachable, so it can still be closed
+  });
+
+  // --- the client follows the session's token (review follow-ups) ---
+
+  const base64Url = (value: string): string =>
+    btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const jwt = (sub: string, nonce = 0): string =>
+    [
+      base64Url(JSON.stringify({ alg: 'none' })),
+      base64Url(JSON.stringify({ sub, role: 'ADMIN', exp: Math.floor(Date.now() / 1000) + 3600, nonce })),
+      'sig',
+    ].join('.');
+
+  it('comes back when a new token arrives after a refresh that failed without ending the session', async () => {
+    // A 429/5xx/network refresh failure keeps the session (http.ts), so the feed must not stay dead.
+    mockRefreshOnce.mockRejectedValueOnce(new Error('503 from /api/auth/refresh'));
+    tokenStore.set(jwt('alice'));
+    wsClient.connect();
+    socketAt(0).simulateClose(1008, 'token expired');
+    await vi.runAllTimersAsync();
+    expect(wsClient.getStatus()).toBe('idle');
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    tokenStore.set(jwt('alice', 1)); // REST refreshed successfully later
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it('a fresh token ends a pause at once instead of waiting out five minutes', async () => {
+    tokenStore.set(jwt('alice'));
+    wsClient.connect();
+    for (let i = 0; i < 5; i++) {
+      socketAt(MockWebSocket.instances.length - 1).simulateClose(1006);
+      if (wsClient.getStatus() !== 'paused') await vi.advanceTimersByTimeAsync(60_000);
+    }
+    expect(wsClient.getStatus()).toBe('paused');
+    const before = MockWebSocket.instances.length;
+
+    tokenStore.set(jwt('alice', 1));
+
+    expect(MockWebSocket.instances).toHaveLength(before + 1);
+    await vi.advanceTimersByTimeAsync(10 * 60_000); // the cancelled pause timer opens nothing more
+    expect(MockWebSocket.instances).toHaveLength(before + 1);
+  });
+
+  it('a token rotation while the socket is live does not churn it', () => {
+    tokenStore.set(jwt('alice'));
+    wsClient.connect();
+    socketAt(0).simulateOpen();
+
+    tokenStore.set(jwt('alice', 1));
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(socketAt(0).closeCode).toBeNull();
+  });
+
+  it("a different user's token drops the socket in the same step — no frame of the old user gets through", () => {
+    tokenStore.set(jwt('alice'));
+    wsClient.connect();
+    const alice = socketAt(0);
+    alice.simulateOpen();
+
+    tokenStore.set(jwt('bob')); // another tab signed in as bob — before any React effect runs
+    alice.simulateMessage(INCIDENT);
+
+    expect(received).toHaveLength(0);
+    expect(alice.closeCode).toBe(1000);
+    expect(wsClient.getStatus()).toBe('idle');
+  });
+
+  it('a cleared token drops the socket in the same step', () => {
+    tokenStore.set(jwt('alice'));
+    wsClient.connect();
+    const alice = socketAt(0);
+    alice.simulateOpen();
+
+    tokenStore.set(null);
+    alice.simulateMessage(INCIDENT);
+
+    expect(received).toHaveLength(0);
+    expect(alice.closeCode).toBe(1000);
+  });
+
+  it('a WebSocket constructor that keeps throwing backs off into a pause, not a tight loop', async () => {
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = class {
+      constructor() {
+        throw new SyntaxError('invalid url');
+      }
+    };
+    wsClient.connect();
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(wsClient.getStatus()).toBe('paused');
+  });
+
+  it('disconnect() cancels a pending retry, and connect() afterwards opens exactly one socket', async () => {
+    wsClient.connect();
+    socketAt(0).simulateClose(1006);
+    wsClient.disconnect();
+
+    wsClient.connect();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it('an old socket that opens late does not flip the status of the current one', () => {
+    wsClient.connect();
+    const old = socketAt(0);
+    wsClient.disconnect();
+
+    old.simulateOpen();
+
+    expect(wsClient.getStatus()).toBe('idle');
   });
 });
