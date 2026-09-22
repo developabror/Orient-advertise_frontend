@@ -8,12 +8,7 @@ import { markErrorHandled } from '@api/errorDialog';
 import { Button, FormInput } from '@components/ui';
 import { ThemeToggle } from '@components/ThemeToggle';
 import { LanguageSwitcher } from '@components/LanguageSwitcher';
-
-const sanitizeRedirect = (raw: string | null): string => {
-  if (!raw) return '/dashboard';
-  if (!raw.startsWith('/') || raw.startsWith('//')) return '/dashboard';
-  return raw;
-};
+import { safeRedirect } from '@/lib/safeRedirect';
 
 // Surface the backend's 401 envelope message verbatim — operators see things
 // like "Account is locked" / "Account is disabled" instead of a misleading
@@ -45,7 +40,7 @@ export const LoginPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const redirect = sanitizeRedirect(params.get('redirect'));
+  const redirect = safeRedirect(params.get('redirect'));
 
   useEffect(() => {
     usernameRef.current?.focus();
