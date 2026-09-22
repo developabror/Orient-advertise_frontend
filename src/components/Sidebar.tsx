@@ -16,20 +16,19 @@ interface NavItem {
 // Per-role nav lists. Advertisers intentionally see only their content section
 // — fleet pages (incidents, devices, etc.) aren't part of their workflow and
 // would surface data unrelated to their account.
-// Ordering follows the operator's mental model, grouped by domain:
-// Overview → Fleet (devices/sync groups) → Content → Monitoring → Administration.
-// The `/reports` landing page is intentionally hidden for now — the route still
-// exists, but no nav entry points to it. `/reports/playback` (Playback report)
-// is a distinct feature and stays.
+// Ordering: Dashboard → Devices → Incidents → Content → Playlists → Sync groups
+// → Playback report → Users → Settings.
+// The `/reports` landing page and `/events` are intentionally hidden for now —
+// their routes still exist, but no nav entry points to them. `/reports/playback`
+// (Playback report) is a distinct feature and stays.
 const NAV_BY_ROLE: Record<Role, readonly NavItem[]> = {
   admin: [
     { to: '/dashboard', labelKey: 'nav.dashboard' },
     { to: '/devices', labelKey: 'nav.devices' },
-    { to: '/sync-groups', labelKey: 'nav.syncGroups' },
+    { to: '/incidents', labelKey: 'nav.incidents' },
     { to: '/content', labelKey: 'nav.content' },
     { to: '/playlists', labelKey: 'nav.playlists' },
-    { to: '/incidents', labelKey: 'nav.incidents' },
-    { to: '/events', labelKey: 'nav.events' },
+    { to: '/sync-groups', labelKey: 'nav.syncGroups' },
     { to: '/reports/playback', labelKey: 'nav.playbackReport' },
     { to: '/users', labelKey: 'nav.users' },
     { to: '/settings', labelKey: 'nav.settings' },
@@ -37,11 +36,10 @@ const NAV_BY_ROLE: Record<Role, readonly NavItem[]> = {
   operator: [
     { to: '/dashboard', labelKey: 'nav.dashboard' },
     { to: '/devices', labelKey: 'nav.devices' },
-    { to: '/sync-groups', labelKey: 'nav.syncGroups' },
+    { to: '/incidents', labelKey: 'nav.incidents' },
     { to: '/content', labelKey: 'nav.content' },
     { to: '/playlists', labelKey: 'nav.playlists' },
-    { to: '/incidents', labelKey: 'nav.incidents' },
-    { to: '/events', labelKey: 'nav.events' },
+    { to: '/sync-groups', labelKey: 'nav.syncGroups' },
     { to: '/reports/playback', labelKey: 'nav.playbackReport' },
     { to: '/settings', labelKey: 'nav.settings' },
   ],
@@ -50,7 +48,6 @@ const NAV_BY_ROLE: Record<Role, readonly NavItem[]> = {
     { to: '/dashboard', labelKey: 'nav.dashboard' },
     { to: '/devices', labelKey: 'nav.devices' },
     { to: '/incidents', labelKey: 'nav.incidents' },
-    { to: '/events', labelKey: 'nav.events' },
     { to: '/reports/playback', labelKey: 'nav.playbackReport' },
   ],
 };
