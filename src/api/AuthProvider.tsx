@@ -101,14 +101,20 @@ export const AuthProvider = ({ children }: Props) => {
   // must: the socket authenticated as the previous user at handshake and would
   // keep streaming their events here (FE-02). The cleanup disconnects on
   // logout, on a user switch (before the new user's connect) and on unmount.
+  //
+  // Only for the roles the backend serves the feed to (ADMIN/OPERATOR —
+  // DashboardHandshakeInterceptor refuses the rest). Viewers and advertisers
+  // used to retry, back off and pause forever behind a permanent "Live updates
+  // paused" badge (VG-05); now they simply stay idle and their pages poll.
   const sub = user?.sub ?? null;
+  const liveFeed = user?.role === 'admin' || user?.role === 'operator';
   useEffect(() => {
-    if (sub === null) return;
+    if (sub === null || !liveFeed) return;
     wsClient.connect();
     return () => {
       wsClient.disconnect();
     };
-  }, [sub]);
+  }, [sub, liveFeed]);
 
   // Fetch /api/me to populate `user.profile` for display fields. Runs
   // only when:

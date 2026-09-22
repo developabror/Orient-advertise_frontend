@@ -35,12 +35,10 @@ const base64Url = (value: string): string =>
   btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 /** An unsigned JWT the client-side decoder accepts; `nonce` makes rotations distinct. */
-const jwt = (sub: string, nonce = 0): string =>
+const jwt = (sub: string, nonce = 0, role = 'ADMIN'): string =>
   [
     base64Url(JSON.stringify({ alg: 'none' })),
-    base64Url(
-      JSON.stringify({ sub, role: 'ADMIN', exp: Math.floor(Date.now() / 1000) + 3600, nonce }),
-    ),
+    base64Url(JSON.stringify({ sub, role, exp: Math.floor(Date.now() / 1000) + 3600, nonce })),
     'sig',
   ].join('.');
 
@@ -125,5 +123,27 @@ describe('AuthProvider — live feed lifecycle', () => {
     view.unmount();
 
     expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  // VG-05: the backend refuses the dashboard feed to these roles, so opening it
+  // only ever produced a permanent "Live updates paused" badge.
+  it.each(['VIEWER', 'ADVERTISER'])('never opens the live feed for a %s', async (role) => {
+    await renderSignedOut();
+
+    act(() => {
+      tokenStore.set(jwt('carol', 0, role));
+    });
+
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('opens it for an operator', async () => {
+    await renderSignedOut();
+
+    act(() => {
+      tokenStore.set(jwt('olga', 0, 'OPERATOR'));
+    });
+
+    expect(connect).toHaveBeenCalledTimes(1);
   });
 });
