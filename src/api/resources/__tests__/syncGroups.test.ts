@@ -292,7 +292,6 @@ describe('jumpSyncGroupToIndex', () => {
         activateAtEpochMs: ACTIVATE_AT_MS,
         activateAtIso: ACTIVATE_AT_ISO,
         memberCount: 4,
-        dispatched: { sent: 4, skipped: 0, failed: 0 },
       },
     });
 
