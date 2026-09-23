@@ -180,20 +180,42 @@ describe('removeDeviceFromSyncGroup', () => {
   });
 });
 
+// A jump's cut-over instant as the backend serialises it: epoch ms plus the
+// Instant.toString() form.
+const ACTIVATE_AT_MS = 1783765845000;
+const ACTIVATE_AT_ISO = '2026-07-11T10:30:45Z';
+
 describe('getSyncGroupPlayback', () => {
   it('GETs /api/sync-groups/{id}/playback and parses a coherent view', async () => {
     mockGet.mockResolvedValueOnce({
       data: {
+        syncGroupId: 7,
         coherent: true,
         reason: null,
         playlistId: 5,
         playlistName: 'Lobby loop',
         loopDurationMs: 90000,
         items: [
-          { index: 0, fileId: 100, title: 'Intro', durationSeconds: 30 },
-          { index: 1, fileId: 101, title: 'Promo', durationSeconds: 60 },
+          {
+            index: 0,
+            fileId: 100,
+            title: 'Intro',
+            durationSeconds: 30,
+            slotStartMs: 0,
+            slotDurationMs: 30000,
+          },
+          {
+            index: 1,
+            fileId: 101,
+            title: 'Promo',
+            durationSeconds: 60,
+            slotStartMs: 30000,
+            slotDurationMs: 60000,
+          },
         ],
-        activeJump: { index: 1, activateAt: '2026-07-11T10:30:45Z' },
+        // Backend SyncGroupPlaybackView.ActiveJump: `activateAt` is epoch ms,
+        // the ISO string rides in `activateAtIso`.
+        activeJump: { index: 1, activateAt: ACTIVATE_AT_MS, activateAtIso: ACTIVATE_AT_ISO },
         memberCount: 4,
       },
     });
@@ -204,8 +226,37 @@ describe('getSyncGroupPlayback', () => {
     expect(view.coherent).toBe(true);
     expect(view.items).toHaveLength(2);
     expect(view.items[1]).toEqual({ index: 1, fileId: 101, title: 'Promo', durationSeconds: 60 });
-    expect(view.activeJump).toEqual({ index: 1, activateAt: '2026-07-11T10:30:45Z' });
+    expect(view.activeJump).toEqual({ index: 1, activateAt: ACTIVATE_AT_ISO });
     expect(view.memberCount).toBe(4);
+  });
+
+  it('uses the slot length when an item has no durationSeconds (default dwell)', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: {
+        syncGroupId: 7,
+        coherent: true,
+        reason: null,
+        playlistId: 5,
+        playlistName: 'Lobby loop',
+        loopDurationMs: 10000,
+        memberCount: 2,
+        items: [
+          {
+            index: 0,
+            fileId: 100,
+            title: 'Poster',
+            durationSeconds: null,
+            slotStartMs: 0,
+            slotDurationMs: 10000,
+          },
+        ],
+        activeJump: null,
+      },
+    });
+
+    const view = await getSyncGroupPlayback(7);
+
+    expect(view.items).toEqual([{ index: 0, fileId: 100, title: 'Poster', durationSeconds: 10 }]);
   });
 
   it('parses a coherent:false view (null activeJump, items coerced to [])', async () => {
@@ -233,7 +284,16 @@ describe('getSyncGroupPlayback', () => {
 describe('jumpSyncGroupToIndex', () => {
   it('POSTs { index } to /playback/jump with the toast suppressed and parses the result', async () => {
     mockPost.mockResolvedValueOnce({
-      data: { syncGroupId: 7, index: 3, activateAt: '2026-07-11T10:30:45Z', memberCount: 4 },
+      // Backend SyncGroupJumpResult, verbatim shape.
+      data: {
+        syncGroupId: 7,
+        index: 3,
+        anchorEpochMs: ACTIVATE_AT_MS - 90000,
+        activateAtEpochMs: ACTIVATE_AT_MS,
+        activateAtIso: ACTIVATE_AT_ISO,
+        memberCount: 4,
+        dispatched: { sent: 4, skipped: 0, failed: 0 },
+      },
     });
 
     const result = await jumpSyncGroupToIndex(7, 3);
@@ -246,7 +306,7 @@ describe('jumpSyncGroupToIndex', () => {
     expect(result).toEqual({
       syncGroupId: 7,
       index: 3,
-      activateAt: '2026-07-11T10:30:45Z',
+      activateAt: ACTIVATE_AT_ISO,
       memberCount: 4,
     });
   });

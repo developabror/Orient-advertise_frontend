@@ -223,13 +223,21 @@ const parseSyncGroupPlaybackItem = (raw: unknown): SyncGroupPlaybackItem => {
   const v = raw as Record<string, unknown>;
   if (typeof v.index !== 'number' || !Number.isFinite(v.index)) throw new Error('index');
   if (typeof v.fileId !== 'number' || !Number.isFinite(v.fileId)) throw new Error('fileId');
-  if (typeof v.durationSeconds !== 'number' || !Number.isFinite(v.durationSeconds))
+  // `durationSeconds` is null when the item has no dwell and no media length;
+  // the backend then plays it for the default slot, so show the slot length.
+  let durationSeconds: number;
+  if (typeof v.durationSeconds === 'number' && Number.isFinite(v.durationSeconds)) {
+    durationSeconds = v.durationSeconds;
+  } else if (typeof v.slotDurationMs === 'number' && Number.isFinite(v.slotDurationMs)) {
+    durationSeconds = Math.round(v.slotDurationMs / 1000);
+  } else {
     throw new Error('durationSeconds');
+  }
   return {
     index: v.index,
     fileId: v.fileId,
     title: typeof v.title === 'string' ? v.title : '',
-    durationSeconds: v.durationSeconds,
+    durationSeconds,
   };
 };
 
@@ -240,8 +248,9 @@ const parseActiveJump = (
   if (typeof raw !== 'object') throw new Error('activeJump is not an object');
   const v = raw as Record<string, unknown>;
   if (typeof v.index !== 'number' || !Number.isFinite(v.index)) throw new Error('activeJump.index');
-  if (typeof v.activateAt !== 'string') throw new Error('activeJump.activateAt');
-  return { index: v.index, activateAt: v.activateAt };
+  // The backend's `activateAt` here is epoch ms; the ISO form is `activateAtIso`.
+  if (typeof v.activateAtIso !== 'string') throw new Error('activeJump.activateAtIso');
+  return { index: v.index, activateAt: v.activateAtIso };
 };
 
 // Liberal on read (mirrors parseRemoteActionDto in deviceDiagnostics.ts): a
@@ -273,13 +282,14 @@ const parseSyncGroupJumpResult = (raw: unknown): SyncGroupJumpResult => {
   if (typeof v.syncGroupId !== 'number' || !Number.isFinite(v.syncGroupId))
     throw new Error('syncGroupId');
   if (typeof v.index !== 'number' || !Number.isFinite(v.index)) throw new Error('index');
-  if (typeof v.activateAt !== 'string') throw new Error('activateAt');
+  // The backend sends the cut-over as `activateAtEpochMs` + `activateAtIso`.
+  if (typeof v.activateAtIso !== 'string') throw new Error('activateAtIso');
   if (typeof v.memberCount !== 'number' || !Number.isFinite(v.memberCount))
     throw new Error('memberCount');
   return {
     syncGroupId: v.syncGroupId,
     index: v.index,
-    activateAt: v.activateAt,
+    activateAt: v.activateAtIso,
     memberCount: v.memberCount,
   };
 };
