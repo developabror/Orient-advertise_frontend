@@ -6,8 +6,9 @@ const en = {
   next: 'Next →',
   sending: 'Sending',
   controlError: 'Could not send playlist command.',
-  progressLabel: 'Playback progress for {{title}}',
-  progressValue: '{{elapsed}} of {{total}}',
+  loading: 'Loading playlist',
+  loadError: 'Could not load the playlist for this device.',
+  scheduleMode: 'This device plays in sync with its group. Use the sync group to jump all screens together.',
   jumpLabel: 'Jump to {{title}}',
 };
 
@@ -21,8 +22,9 @@ export const dict = {
     next: 'Далее →',
     sending: 'Отправка',
     controlError: 'Не удалось отправить команду плейлиста.',
-    progressLabel: 'Прогресс воспроизведения для {{title}}',
-    progressValue: '{{elapsed}} из {{total}}',
+    loading: 'Загрузка плейлиста',
+    loadError: 'Не удалось загрузить плейлист этого устройства.',
+    scheduleMode: 'Это устройство воспроизводит синхронно со своей группой. Чтобы переключить все экраны вместе, используйте группу синхронизации.',
     jumpLabel: 'Перейти к {{title}}',
   } satisfies typeof en,
   uz: {
@@ -33,8 +35,9 @@ export const dict = {
     next: 'Keyingi →',
     sending: 'Yuborilmoqda',
     controlError: 'Pleylist buyrugʻini yuborib boʻlmadi.',
-    progressLabel: '{{title}} uchun ijro jarayoni',
-    progressValue: '{{total}} dan {{elapsed}}',
+    loading: 'Pleylist yuklanmoqda',
+    loadError: 'Bu qurilmaning pleylistini yuklab boʻlmadi.',
+    scheduleMode: 'Bu qurilma oʻz guruhi bilan sinxron ijro etadi. Barcha ekranlarni birga oʻtkazish uchun sinxron guruhdan foydalaning.',
     jumpLabel: '{{title}} ga oʻtish',
   } satisfies typeof en,
 };

@@ -15,13 +15,9 @@ export type { Device, DeviceStatus, DevicesQuery, DevicesState } from './useDevi
 export { useRegions } from './useRegions';
 export type { Region } from './useRegions';
 export { useDevice } from './useDevice';
-export type {
-  DeviceDetail,
-  DeviceDetailStatus,
-  DevicePlaylist,
-  DevicePlaylistItem,
-  DeviceFetchState,
-} from './useDevice';
+export type { DeviceDetail, DeviceDetailStatus, DeviceFetchState } from './useDevice';
+export { useDeviceActivePlaylist } from './useDeviceActivePlaylist';
+export type { DeviceActivePlaylistState } from './useDeviceActivePlaylist';
 export { useDeviceEvents } from './useDeviceEvents';
 export type {
   DeviceEvent,

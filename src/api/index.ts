@@ -64,6 +64,7 @@ export {
   clearDeviceVolume,
   deleteDevice,
   getDevice,
+  getDeviceActivePlaylist,
   listDevices,
   setAllDevicesVolume,
   setDeviceVolume,
@@ -71,6 +72,8 @@ export {
   updateDeviceLocation,
 } from './resources/devices';
 export type {
+  DeviceActivePlaylist,
+  DeviceActivePlaylistItem,
   DeviceDetail,
   DeviceListFilters,
   DeviceListItem,

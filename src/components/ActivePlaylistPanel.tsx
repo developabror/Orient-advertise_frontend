@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from './ui/Button';
 import { Spinner } from './ui/Spinner';
@@ -6,24 +6,24 @@ import { http } from '@api/http';
 import { notify } from '@api/notify';
 import { extractApiMessage } from '@api';
 import { markErrorHandled } from '@api/errorDialog';
-import type { DevicePlaylist } from '@hooks/useDevice';
+import type { DeviceActivePlaylistState } from '@hooks';
 
 interface Props {
   deviceId: string;
-  playlist: DevicePlaylist | null;
+  state: DeviceActivePlaylistState;
   controlsEnabled?: boolean;
 }
 
 type ControlAction =
   | { readonly type: 'prev' }
   | { readonly type: 'next' }
-  | { readonly type: 'jump'; readonly itemId: string };
+  | { readonly type: 'jump'; readonly index: number };
 
 type PendingControl =
   | { readonly kind: 'none' }
   | { readonly kind: 'prev' }
   | { readonly kind: 'next' }
-  | { readonly kind: 'jump'; readonly itemId: string };
+  | { readonly kind: 'jump'; readonly index: number };
 
 const formatDuration = (seconds: number): string => {
   const safe = Math.max(0, Math.floor(seconds));
@@ -32,54 +32,36 @@ const formatDuration = (seconds: number): string => {
   return `${String(minutes)}:${String(secs).padStart(2, '0')}`;
 };
 
-const prefersReducedMotion = (): boolean =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-export const ActivePlaylistPanel = ({ deviceId, playlist, controlsEnabled = false }: Props) => {
+const Frame = ({ children }: { children: React.ReactNode }) => {
   const { t } = useTranslation();
-  const activeItemRef = useRef<HTMLDivElement | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(playlist?.currentItemElapsedSeconds ?? 0);
+  return (
+    <article className="oa-card oa-playlist">
+      <header className="oa-panel-header">
+        <h2>{t('activePlaylistPanel.heading')}</h2>
+      </header>
+      {children}
+    </article>
+  );
+};
+
+export const ActivePlaylistPanel = ({ deviceId, state, controlsEnabled = false }: Props) => {
+  const { t } = useTranslation();
   const [pending, setPending] = useState<PendingControl>({ kind: 'none' });
-
-  useEffect(() => {
-    setElapsedSeconds(playlist?.currentItemElapsedSeconds ?? 0);
-  }, [playlist?.currentItemId, playlist?.currentItemElapsedSeconds]);
-
-  useEffect(() => {
-    if (playlist?.currentItemId === undefined || playlist.currentItemId === null) return;
-    const id = window.setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1_000);
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [playlist?.currentItemId]);
-
-  useEffect(() => {
-    const node = activeItemRef.current;
-    if (!node) return;
-    node.scrollIntoView({
-      block: 'nearest',
-      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
-    });
-  }, [playlist?.currentItemId]);
 
   const sendControl = async (action: ControlAction): Promise<void> => {
     setPending(
-      action.type === 'jump' ? { kind: 'jump', itemId: action.itemId } : { kind: action.type },
+      action.type === 'jump' ? { kind: 'jump', index: action.index } : { kind: action.type },
     );
     try {
-      // Spec: POST /api/devices/{id}/playlist/control body
+      // POST /api/devices/{id}/playlist/control body
       // PlaylistControlRequest{ action: PREV|NEXT|JUMP, position?: int }.
-      // For JUMP, derive `position` from the index of the target item in
-      // the playlist (the FE keeps items in playback order).
-      let body: { action: 'PREV' | 'NEXT' | 'JUMP'; position?: number };
-      if (action.type === 'prev') body = { action: 'PREV' };
-      else if (action.type === 'next') body = { action: 'NEXT' };
-      else {
-        const idx = playlist?.items.findIndex((it) => it.id === action.itemId) ?? -1;
-        body = { action: 'JUMP', position: idx >= 0 ? idx : 0 };
-      }
+      // `position` is the item's delivered index, which the backend range-checks
+      // against the same list this panel renders — never the row's ordinal in
+      // some other ordering, and never the raw playlist position.
+      const body: { action: 'PREV' | 'NEXT' | 'JUMP'; position?: number } =
+        action.type === 'jump'
+          ? { action: 'JUMP', position: action.index }
+          : { action: action.type === 'prev' ? 'PREV' : 'NEXT' };
       await http.post(`/api/devices/${encodeURIComponent(deviceId)}/playlist/control`, body, {
         _suppressErrorToast: true,
       });
@@ -91,45 +73,64 @@ export const ActivePlaylistPanel = ({ deviceId, playlist, controlsEnabled = fals
     }
   };
 
+  if (state.state === 'loading') {
+    return (
+      <Frame>
+        <Spinner size="sm" label={t('activePlaylistPanel.loading')} />
+      </Frame>
+    );
+  }
+
+  if (state.state === 'error') {
+    // The old code swallowed this and showed "No playlist assigned" instead,
+    // which is why a permanent 403 went unnoticed for so long (VG-02).
+    return (
+      <Frame>
+        <p className="oa-settings-page__error" role="alert">
+          {state.message ?? t('activePlaylistPanel.loadError')}
+        </p>
+      </Frame>
+    );
+  }
+
+  const playlist = state.playlist;
+
   if (playlist === null) {
     return (
-      <article className="oa-card oa-playlist">
-        <header className="oa-panel-header">
-          <h2>{t('activePlaylistPanel.heading')}</h2>
-        </header>
+      <Frame>
         <p className="oa-muted">{t('activePlaylistPanel.noPlaylist')}</p>
-      </article>
+      </Frame>
     );
   }
 
   if (playlist.items.length === 0) {
     return (
-      <article className="oa-card oa-playlist">
-        <header className="oa-panel-header">
-          <h2>{t('activePlaylistPanel.heading')}</h2>
-        </header>
+      <Frame>
         <p className="oa-playlist__name">{playlist.name}</p>
         <p className="oa-muted">{t('activePlaylistPanel.noItems')}</p>
-      </article>
+      </Frame>
     );
   }
 
-  const currentIndex =
-    playlist.currentItemId !== null
-      ? playlist.items.findIndex((i) => i.id === playlist.currentItemId)
-      : -1;
-  const canPrev = currentIndex > 0;
-  const canNext = currentIndex >= 0 && currentIndex < playlist.items.length - 1;
+  // Per-device transport is refused while the device follows a group anchor
+  // (the device answers PLAYLIST_CONTROL with FAILED "SCHEDULE_MODE"), so the
+  // panel offers the sync-group jump instead of buttons that quietly do nothing.
+  const controlsUsable = controlsEnabled && !playlist.scheduled;
+  // There is no "currently playing" signal on this endpoint — the device never
+  // reports its position — so transport is offered whenever there is somewhere
+  // to step to, and the device resolves prev/next against what it is playing.
+  const canStep = playlist.items.length > 1;
   const anyPending = pending.kind !== 'none';
 
   return (
-    <article className="oa-card oa-playlist">
-      <header className="oa-panel-header">
-        <h2>{t('activePlaylistPanel.heading')}</h2>
-      </header>
+    <Frame>
       <p className="oa-playlist__name">{playlist.name}</p>
 
-      {controlsEnabled && (
+      {controlsEnabled && playlist.scheduled && (
+        <p className="oa-muted">{t('activePlaylistPanel.scheduleMode')}</p>
+      )}
+
+      {controlsUsable && (
         <div className="oa-playlist__controls">
           <Button
             variant="secondary"
@@ -137,7 +138,7 @@ export const ActivePlaylistPanel = ({ deviceId, playlist, controlsEnabled = fals
             onClick={() => {
               void sendControl({ type: 'prev' });
             }}
-            disabled={!canPrev || anyPending}
+            disabled={!canStep || anyPending}
             isLoading={pending.kind === 'prev'}
           >
             {t('activePlaylistPanel.previous')}
@@ -148,7 +149,7 @@ export const ActivePlaylistPanel = ({ deviceId, playlist, controlsEnabled = fals
             onClick={() => {
               void sendControl({ type: 'next' });
             }}
-            disabled={!canNext || anyPending}
+            disabled={!canStep || anyPending}
             isLoading={pending.kind === 'next'}
           >
             {t('activePlaylistPanel.next')}
@@ -157,62 +158,37 @@ export const ActivePlaylistPanel = ({ deviceId, playlist, controlsEnabled = fals
       )}
 
       <ol className="oa-playlist__list">
-        {playlist.items.map((item, i) => {
-          const isActive = item.id === playlist.currentItemId;
-          const canJump = controlsEnabled && !isActive;
-          const isJumpLoading = pending.kind === 'jump' && pending.itemId === item.id;
-          const progressPct =
-            isActive && item.durationSeconds > 0
-              ? Math.min(100, (elapsedSeconds / item.durationSeconds) * 100)
-              : 0;
-
-          const indexCell = isJumpLoading ? (
-            <span className="oa-playlist__index">
-              <Spinner size="sm" label={t('activePlaylistPanel.sending')} />
-            </span>
-          ) : (
-            <span className="oa-playlist__index">{i + 1}</span>
-          );
+        {playlist.items.map((item) => {
+          const isJumpLoading = pending.kind === 'jump' && pending.index === item.index;
 
           const itemContent = (
             <>
-              {indexCell}
+              {isJumpLoading ? (
+                <span className="oa-playlist__index">
+                  <Spinner size="sm" label={t('activePlaylistPanel.sending')} />
+                </span>
+              ) : (
+                <span className="oa-playlist__index">{item.index + 1}</span>
+              )}
               <div className="oa-playlist__main">
                 <span className="oa-playlist__title" title={item.title}>
                   {item.title}
                 </span>
-                {isActive && (
-                  <div
-                    className="oa-playlist__progress"
-                    role="progressbar"
-                    aria-label={t('activePlaylistPanel.progressLabel', { title: item.title })}
-                    aria-valuenow={Math.round(progressPct)}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuetext={t('activePlaylistPanel.progressValue', {
-                      elapsed: formatDuration(elapsedSeconds),
-                      total: formatDuration(item.durationSeconds),
-                    })}
-                  >
-                    <span
-                      className="oa-playlist__progress-fill"
-                      style={{ width: `${String(progressPct)}%` }}
-                    />
-                  </div>
-                )}
               </div>
               <span className="oa-playlist__duration">{formatDuration(item.durationSeconds)}</span>
             </>
           );
 
           return (
-            <li key={item.id}>
-              {canJump ? (
+            // Keyed by the delivered index, not fileId: a playlist may schedule
+            // the same clip twice, and fileId keys would collide.
+            <li key={item.index}>
+              {controlsUsable ? (
                 <button
                   type="button"
                   className="oa-playlist__item oa-playlist__item--clickable"
                   onClick={() => {
-                    void sendControl({ type: 'jump', itemId: item.id });
+                    void sendControl({ type: 'jump', index: item.index });
                   }}
                   disabled={anyPending}
                   aria-label={t('activePlaylistPanel.jumpLabel', { title: item.title })}
@@ -220,18 +196,12 @@ export const ActivePlaylistPanel = ({ deviceId, playlist, controlsEnabled = fals
                   {itemContent}
                 </button>
               ) : (
-                <div
-                  ref={isActive ? activeItemRef : null}
-                  className={`oa-playlist__item${isActive ? ' oa-playlist__item--active' : ''}`}
-                  aria-current={isActive ? 'true' : undefined}
-                >
-                  {itemContent}
-                </div>
+                <div className="oa-playlist__item">{itemContent}</div>
               )}
             </li>
           );
         })}
       </ol>
-    </article>
+    </Frame>
   );
 };

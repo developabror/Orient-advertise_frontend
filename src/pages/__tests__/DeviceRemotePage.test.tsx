@@ -133,7 +133,6 @@ beforeEach(() => {
       volumeOverride: null,
       lastSeen: null,
       status: 'online',
-      activePlaylist: null,
       remoteCapability: null,
     },
   } as never);

@@ -35,6 +35,7 @@ import {
 import { markErrorHandled } from '@api/errorDialog';
 import {
   useDevice,
+  useDeviceActivePlaylist,
   useDeviceEvents,
   useDiagnostics,
   useRole,
@@ -275,6 +276,7 @@ export const DeviceDetailPage = () => {
   const location = useLocation();
   const role = useRole();
   const fetchState = useDevice(id);
+  const activePlaylist = useDeviceActivePlaylist(id);
   const { events, isLoading: eventsLoading } = useDeviceEvents(id);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -433,7 +435,7 @@ export const DeviceDetailPage = () => {
       <div className="oa-device-detail__panels">
         <ActivePlaylistPanel
           deviceId={device.id}
-          playlist={device.activePlaylist}
+          state={activePlaylist}
           controlsEnabled={canControl}
         />
 

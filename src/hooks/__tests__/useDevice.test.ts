@@ -27,14 +27,8 @@ const detail = (over: Record<string, unknown> = {}): Record<string, unknown> => 
   ...over,
 });
 
-// useDevice fetches detail + playlist in parallel; resolve the playlist as
-// empty so only the detail status matters.
 const mockDetail = (payload: Record<string, unknown>): void => {
-  vi.mocked(http.get).mockImplementation((url: string) =>
-    url.endsWith('/playlist')
-      ? Promise.resolve({ data: null } as never)
-      : Promise.resolve({ data: payload } as never),
-  );
+  vi.mocked(http.get).mockResolvedValue({ data: payload } as never);
 };
 
 const readyStatus = async (): Promise<string> => {
@@ -169,5 +163,18 @@ describe('useDevice — re-registration window mapping', () => {
     mockDetail(detail({ reregistrationAllowedUntil: value }));
     const device = await readyDevice();
     expect(device.reregistrationAllowedUntil).toBeNull();
+  });
+});
+
+describe('useDevice — fetch surface', () => {
+  it('asks for the device record only (the playlist has its own hook)', async () => {
+    mockDetail(detail());
+
+    await readyStatus();
+
+    // Two calls used to go out, the second to the device-only /playlist, whose
+    // permanent 403 was swallowed (VG-02). The panel now loads its own data.
+    expect(vi.mocked(http.get)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(http.get).mock.calls[0]?.[0]).toBe('/api/devices/7');
   });
 });

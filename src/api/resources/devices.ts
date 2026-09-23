@@ -287,3 +287,92 @@ export const setAllDevicesVolume = async (volume: number): Promise<{ affected: n
   const { data } = await http.put<{ affected: number }>(`/api/devices/volume`, { volume });
   return data;
 };
+
+/**
+ * One row of {@link DeviceActivePlaylist}. `index` is the device's **delivered**
+ * ordinal: contiguous from 0 over the items the device actually holds, and
+ * exactly what `POST /api/devices/{id}/playlist/control` takes as a JUMP
+ * `position`. Use it as the React key too — `fileId` repeats when a playlist
+ * schedules the same clip twice, and keying by it would duplicate keys and jump
+ * to the wrong row. `position` is the raw playlist slot, shown for reference.
+ */
+export interface DeviceActivePlaylistItem {
+  readonly index: number;
+  readonly position: number;
+  readonly fileId: string;
+  readonly title: string;
+  readonly durationSeconds: number;
+}
+
+/**
+ * What a device is playing, as the operator panel lists it. `playlistId` is
+ * null when nothing is assigned (a 200, not an error). `scheduled` means the
+ * device is in synchronised group playback: it refuses per-device transport
+ * commands (`FAILED "SCHEDULE_MODE"`), so the UI disables them and points at
+ * the sync-group jump instead.
+ */
+export interface DeviceActivePlaylist {
+  readonly playlistId: string | null;
+  readonly name: string;
+  readonly totalDurationSeconds: number;
+  readonly scheduled: boolean;
+  readonly items: readonly DeviceActivePlaylistItem[];
+}
+
+const parseActivePlaylistItem = (raw: unknown): DeviceActivePlaylistItem => {
+  if (typeof raw !== 'object' || raw === null) throw new Error('item is not an object');
+  const v = raw as Record<string, unknown>;
+  if (typeof v.index !== 'number' || !Number.isFinite(v.index)) throw new Error('index');
+  if (typeof v.fileId !== 'number' || !Number.isFinite(v.fileId)) throw new Error('fileId');
+  const fileId = String(v.fileId);
+  return {
+    index: v.index,
+    position:
+      typeof v.position === 'number' && Number.isFinite(v.position) ? v.position : v.index,
+    fileId,
+    title: typeof v.name === 'string' && v.name !== '' ? v.name : fileId,
+    // The backend sends the slot the device really plays, so this is never
+    // null — but a floor at 0 keeps a bad row from rendering a negative bar.
+    durationSeconds: Math.max(
+      0,
+      typeof v.durationSeconds === 'number' && Number.isFinite(v.durationSeconds)
+        ? Math.floor(v.durationSeconds)
+        : 0,
+    ),
+  };
+};
+
+/**
+ * `GET /api/devices/{id}/active-playlist` — the operator view of what the
+ * device is playing (ADMIN/OPERATOR/VIEWER; 404 when out of an operator's
+ * scope). Deliberately NOT the device's own `/playlist`, which is device-only
+ * and hands out presigned media URLs.
+ *
+ * `_suppressErrorToast` silences the generic toast: the panel renders the
+ * failure itself, so the caller must `markErrorHandled(err)` (see
+ * `useDeviceActivePlaylist`).
+ */
+export const getDeviceActivePlaylist = async (
+  id: string,
+  signal?: AbortSignal,
+): Promise<DeviceActivePlaylist> => {
+  const { data } = await http.get<unknown>(
+    `/api/devices/${encodeURIComponent(id)}/active-playlist`,
+    // `exactOptionalPropertyTypes`: only pass `signal` when there is one.
+    { ...(signal ? { signal } : {}), _suppressErrorToast: true },
+  );
+  if (typeof data !== 'object' || data === null) throw new Error('active playlist is not an object');
+  const v = data as Record<string, unknown>;
+  const playlistId = numOrNull(v.playlistId);
+  const items = Array.isArray(v.items) ? v.items.map(parseActivePlaylistItem) : [];
+  return {
+    playlistId: playlistId === null ? null : String(playlistId),
+    name: typeof v.playlistName === 'string' && v.playlistName !== '' ? v.playlistName : '',
+    totalDurationSeconds:
+      typeof v.totalDurationSeconds === 'number' && Number.isFinite(v.totalDurationSeconds)
+        ? v.totalDurationSeconds
+        : 0,
+    scheduled: v.scheduled === true,
+    items,
+  };
+};

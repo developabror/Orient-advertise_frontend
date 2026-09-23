@@ -17,6 +17,7 @@ import {
   clearDeviceVolume,
   deleteDevice,
   getDevice,
+  getDeviceActivePlaylist,
   listDevices,
   setAllDevicesVolume,
   setDeviceVolume,
@@ -478,5 +479,84 @@ describe('allowReregistration', () => {
     const err = makeAxiosError(status);
     mockPost.mockRejectedValueOnce(err);
     await expect(allowReregistration(7)).rejects.toBe(err);
+  });
+});
+
+describe('getDeviceActivePlaylist', () => {
+  it('GETs the operator endpoint with the toast suppressed and parses the rows', async () => {
+    mockGet.mockResolvedValueOnce({
+      // Backend ActivePlaylistResponse, verbatim.
+      data: {
+        deviceId: 11,
+        playlistId: 100,
+        playlistName: 'Mall Loop',
+        totalDurationSeconds: 45,
+        scheduled: false,
+        items: [
+          { index: 0, position: 0, fileId: 10, name: 'Intro', durationSeconds: 30 },
+          { index: 1, position: 2, fileId: 12, name: 'Promo', durationSeconds: 15 },
+        ],
+      },
+    });
+
+    const playlist = await getDeviceActivePlaylist('11');
+
+    // NOT the device-only /playlist, whose 403 is what VG-02 was.
+    expect(mockGet).toHaveBeenCalledWith('/api/devices/11/active-playlist', {
+      _suppressErrorToast: true,
+    });
+    expect(playlist.playlistId).toBe('100');
+    expect(playlist.name).toBe('Mall Loop');
+    expect(playlist.scheduled).toBe(false);
+    expect(playlist.items).toEqual([
+      { index: 0, position: 0, fileId: '10', title: 'Intro', durationSeconds: 30 },
+      { index: 1, position: 2, fileId: '12', title: 'Promo', durationSeconds: 15 },
+    ]);
+  });
+
+  it('passes the abort signal when the caller has one', async () => {
+    mockGet.mockResolvedValueOnce({ data: { playlistId: null, items: [] } });
+    const controller = new AbortController();
+
+    await getDeviceActivePlaylist('11', controller.signal);
+
+    expect(mockGet).toHaveBeenCalledWith('/api/devices/11/active-playlist', {
+      signal: controller.signal,
+      _suppressErrorToast: true,
+    });
+  });
+
+  it('keeps repeated fileIds as distinct rows (a clip may be scheduled twice)', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: {
+        playlistId: 100,
+        playlistName: 'Loop',
+        items: [
+          { index: 0, position: 0, fileId: 10, name: 'Ad', durationSeconds: 10 },
+          { index: 1, position: 1, fileId: 10, name: 'Ad', durationSeconds: 10 },
+        ],
+      },
+    });
+
+    const playlist = await getDeviceActivePlaylist('11');
+
+    expect(playlist.items.map((i) => i.index)).toEqual([0, 1]);
+  });
+
+  it('parses an unassigned device as a null playlistId, not an error', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: { deviceId: 12, playlistId: null, playlistName: null, scheduled: false, items: [] },
+    });
+
+    const playlist = await getDeviceActivePlaylist('12');
+
+    expect(playlist.playlistId).toBeNull();
+    expect(playlist.items).toEqual([]);
+  });
+
+  it('rejects on 403 so the caller can surface it instead of showing "no playlist"', async () => {
+    const err = makeAxiosError(403);
+    mockGet.mockRejectedValueOnce(err);
+    await expect(getDeviceActivePlaylist('11')).rejects.toBe(err);
   });
 });
