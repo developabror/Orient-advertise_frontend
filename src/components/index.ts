@@ -1,6 +1,7 @@
 export { ProtectedRoute } from './ProtectedRoute';
 export { AppLayout } from './AppLayout';
 export { Toaster } from './Toaster';
+export { ErrorBoundary } from './ErrorBoundary';
 export { ErrorDialogHost } from './ErrorDialogHost';
 export { LiveStatusIndicator } from './LiveStatusIndicator';
 export { CriticalAlertBar } from './CriticalAlertBar';

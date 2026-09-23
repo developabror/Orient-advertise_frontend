@@ -10,6 +10,7 @@ import { dict as advertiserContentDetailPage } from './advertiserContentDetailPa
 import { dict as advertiserDashboard } from './advertiserDashboard';
 import { dict as assignContentDrawer } from './assignContentDrawer';
 import { dict as bootstrapLoadingScreen } from './bootstrapLoadingScreen';
+import { dict as errorBoundary } from './errorBoundary';
 import { dict as contentCard } from './contentCard';
 import { dict as contentPage } from './contentPage';
 import { dict as contentPreviewModal } from './contentPreviewModal';
@@ -65,6 +66,7 @@ export const pagesEn = {
   advertiserDashboard: advertiserDashboard.en,
   assignContentDrawer: assignContentDrawer.en,
   bootstrapLoadingScreen: bootstrapLoadingScreen.en,
+  errorBoundary: errorBoundary.en,
   contentCard: contentCard.en,
   contentPage: contentPage.en,
   contentPreviewModal: contentPreviewModal.en,
@@ -121,6 +123,7 @@ export const pagesRu = {
   advertiserDashboard: advertiserDashboard.ru,
   assignContentDrawer: assignContentDrawer.ru,
   bootstrapLoadingScreen: bootstrapLoadingScreen.ru,
+  errorBoundary: errorBoundary.ru,
   contentCard: contentCard.ru,
   contentPage: contentPage.ru,
   contentPreviewModal: contentPreviewModal.ru,
@@ -177,6 +180,7 @@ export const pagesUz = {
   advertiserDashboard: advertiserDashboard.uz,
   assignContentDrawer: assignContentDrawer.uz,
   bootstrapLoadingScreen: bootstrapLoadingScreen.uz,
+  errorBoundary: errorBoundary.uz,
   contentCard: contentCard.uz,
   contentPage: contentPage.uz,
   contentPreviewModal: contentPreviewModal.uz,

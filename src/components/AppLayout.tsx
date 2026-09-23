@@ -6,6 +6,7 @@ import { wsClient } from '@api/wsClient';
 import { criticalAlerts, handleIncidentUpdated, handleSnapshot } from '@api/criticalAlerts';
 import { notify } from '@api/notify';
 import { CriticalAlertBar } from './CriticalAlertBar';
+import { ErrorBoundary } from './ErrorBoundary';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { LiveStatusIndicator } from './LiveStatusIndicator';
 import { Sidebar } from './Sidebar';
@@ -140,7 +141,11 @@ export const AppLayout = () => {
             </div>
           </header>
           <main className="oa-main">
-            <Outlet />
+            {/* Page-scoped: a broken screen keeps the sidebar and topbar usable, and the
+                error clears as soon as the operator navigates somewhere else. */}
+            <ErrorBoundary resetKey={location.pathname}>
+              <Outlet />
+            </ErrorBoundary>
           </main>
         </div>
       </div>

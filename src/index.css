@@ -4765,6 +4765,26 @@ button.oa-playlist__item:disabled {
   white-space: pre-wrap;
 }
 
+/* Render-error fallback (ErrorBoundary). Deliberately plain: it has to render when the
+   page it replaced could not, so it leans on tokens only — no layout the app owns. */
+.oa-error-boundary {
+  max-width: 40rem;
+  margin: 3rem auto;
+  padding: 1.5rem;
+  border: 1px solid var(--oa-border);
+  background: var(--oa-surface);
+  color: var(--oa-text);
+}
+
+.oa-error-boundary h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+}
+
+.oa-error-boundary__actions {
+  margin-top: 1rem;
+}
+
 .oa-settings-page__notice {
   padding: 0.5rem 0.75rem;
   border-left: 3px solid var(--oa-accent);
