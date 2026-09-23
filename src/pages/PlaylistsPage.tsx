@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import axios from 'axios';
+import { useLatestRequest } from '@hooks';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
@@ -24,9 +25,7 @@ import {
   RoleGate,
   SearchInput,
   Select,
-  Spinner,
-  Table,
-} from '@components';
+  Table, OperatorScopeFallback } from '@components';
 import {
   addPlaylistItem,
   createPlaylist,
@@ -307,7 +306,7 @@ export const PlaylistsPage = () => {
   const canMutate = role === 'admin' || role === 'operator';
   const canDelete = role === 'admin';
 
-  const { isOperator, projectIds, scopeResolved } = useAssignedProjects();
+  const { isOperator, projectIds, scopeResolved, scopeFailed, retryScope } = useAssignedProjects();
   const noProjects = isOperator && projectIds.length === 0;
 
   const [projects, setProjects] = useState<readonly ProjectSummary[]>([]);
@@ -322,6 +321,8 @@ export const PlaylistsPage = () => {
   const [listError, setListError] = useState<string | null>(null);
 
   const [drawerId, setDrawerId] = useState<number | null>(null);
+  const claimDrawer = useLatestRequest();
+  const claimList = useLatestRequest();
   const [drawerData, setDrawerData] = useState<PlaylistDetail | null>(null);
   const [drawerLoading, setDrawerLoading] = useState<boolean>(false);
   const [itemError, setItemError] = useState<string | null>(null);
@@ -390,6 +391,8 @@ export const PlaylistsPage = () => {
   }, [nameInput, name]);
 
   const load = useCallback(() => {
+    // Ignore a response a newer filter or page has already superseded (VG-16).
+    const isCurrentList = claimList();
     setIsLoading(true);
     setListError(null);
     const filters = {
@@ -398,16 +401,19 @@ export const PlaylistsPage = () => {
     };
     listPlaylists(filters, { page, size: PAGE_SIZE, sort: 'name,asc' })
       .then((res) => {
+        if (!isCurrentList()) return;
         setRows(res.content);
         setTotalPages(res.totalPages);
       })
       .catch((err: unknown) => {
+        if (!isCurrentList()) return;
         setListError(extractMessage(err) ?? t('playlistsPage.errLoadList'));
       })
       .finally(() => {
+        if (!isCurrentList()) return;
         setIsLoading(false);
       });
-  }, [projectId, name, page, t]);
+  }, [projectId, name, page, t, claimList]);
 
   useEffect(() => {
     if (!scopeResolved) return;
@@ -451,8 +457,14 @@ export const PlaylistsPage = () => {
     [projects, t],
   );
 
-  const refreshDrawer = useCallback((id: number) => {
+  /**
+   * Load one playlist into the drawer. `isCurrent` is the caller's ticket from
+   * {@link useLatestRequest}: a response a newer open or refresh has superseded is dropped instead
+   * of painted, because the rename, delete and item buttons act on the drawer's id (VG-16).
+   */
+  const refreshDrawer = useCallback((id: number, isCurrent: () => boolean) => {
     return getPlaylist(id).then((d) => {
+      if (!isCurrent()) return d;
       setDrawerData(d);
       setDraftOrder(null);
       return d;
@@ -460,6 +472,7 @@ export const PlaylistsPage = () => {
   }, []);
 
   const openDrawer = (id: number): void => {
+    const isCurrentDrawer = claimDrawer();
     setDrawerId(id);
     setDrawerData(null);
     setEditName(null);
@@ -467,17 +480,20 @@ export const PlaylistsPage = () => {
     setDeleteError(null);
     setItemError(null);
     setDrawerLoading(true);
-    refreshDrawer(id)
+    refreshDrawer(id, isCurrentDrawer)
       .catch((err: unknown) => {
+        if (!isCurrentDrawer()) return;
         notify.error(extractMessage(err) ?? t('playlistsPage.errLoadPlaylist'));
         setDrawerId(null);
       })
       .finally(() => {
+        if (!isCurrentDrawer()) return;
         setDrawerLoading(false);
       });
   };
 
   const closeDrawer = (): void => {
+    claimDrawer();   // retire an in-flight load so it cannot reopen this drawer
     setDrawerId(null);
     setDrawerData(null);
     setEditName(null);
@@ -620,7 +636,7 @@ export const PlaylistsPage = () => {
       .then(async () => {
         setPicker(EMPTY_PICKER);
         setPickerDwell({});
-        await refreshDrawer(drawerData.id);
+        await refreshDrawer(drawerData.id, claimDrawer());
         load();
       })
       .catch((err: unknown) => {
@@ -636,7 +652,7 @@ export const PlaylistsPage = () => {
     setItemError(null);
     removePlaylistItem(drawerData.id, itemId)
       .then(async () => {
-        await refreshDrawer(drawerData.id);
+        await refreshDrawer(drawerData.id, claimDrawer());
         load();
       })
       .catch((err: unknown) => {
@@ -666,7 +682,7 @@ export const PlaylistsPage = () => {
       setIsReordering(true);
       reorderPlaylistItems(drawerData.id, orderedItemIds)
         .then(async () => {
-          await refreshDrawer(drawerData.id);
+          await refreshDrawer(drawerData.id, claimDrawer());
           // refreshDrawer already calls setDraftOrder(null); the explicit
           // call below is belt-and-suspenders for code paths that might
           // change refreshDrawer in future.
@@ -681,7 +697,7 @@ export const PlaylistsPage = () => {
           setIsReordering(false);
         });
     },
-    [drawerData, refreshDrawer, t],
+    [drawerData, refreshDrawer, claimDrawer, t],
   );
 
   const onDragStart = (id: number) => (_e: DragEvent<HTMLLIElement>): void => {
@@ -784,11 +800,8 @@ export const PlaylistsPage = () => {
   );
 
   if (!scopeResolved) {
-    return (
-      <div className="oa-settings-page">
-        <Spinner size="lg" label={t('operatorScope.loading')} />
-      </div>
-    );
+    // A spinner while it is loading, an error with a retry once /api/me has given up (VG-12).
+    return <OperatorScopeFallback failed={scopeFailed} onRetry={retryScope} />;
   }
 
   if (noProjects) {
@@ -1050,7 +1063,7 @@ export const PlaylistsPage = () => {
                           canEdit={canMutate}
                           disabled={isReordering}
                           onCommitted={() => {
-                            void refreshDrawer(drawerData.id).then(() => {
+                            void refreshDrawer(drawerData.id, claimDrawer()).then(() => {
                               load();
                             });
                           }}

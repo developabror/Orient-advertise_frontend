@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLatestRequest } from '@hooks';
 import { Trans, useTranslation } from 'react-i18next';
 import axios from 'axios';
 import {
@@ -13,10 +14,8 @@ import {
   RoleGate,
   SearchInput,
   Select,
-  Spinner,
   Table,
-  VolumeControl,
-} from '@components';
+  VolumeControl, OperatorScopeFallback } from '@components';
 import {
   addDevicesToGroup,
   clearDeviceGroupVolume,
@@ -85,7 +84,7 @@ export const DeviceGroupsPage = () => {
   const canMutate = role === 'admin' || role === 'operator';
   const canDelete = role === 'admin';
 
-  const { isOperator, projectIds, scopeResolved } = useAssignedProjects();
+  const { isOperator, projectIds, scopeResolved, scopeFailed, retryScope } = useAssignedProjects();
   const noProjects = isOperator && projectIds.length === 0;
 
   const [projects, setProjects] = useState<readonly ProjectSummary[]>([]);
@@ -100,6 +99,8 @@ export const DeviceGroupsPage = () => {
   const [listError, setListError] = useState<string | null>(null);
 
   const [drawerId, setDrawerId] = useState<number | null>(null);
+  const claimDrawer = useLatestRequest();
+  const claimList = useLatestRequest();
   const [drawerData, setDrawerData] = useState<DeviceGroupDetail | null>(null);
   const [drawerLoading, setDrawerLoading] = useState<boolean>(false);
 
@@ -146,6 +147,8 @@ export const DeviceGroupsPage = () => {
   }, [nameInput, name]);
 
   const load = useCallback(() => {
+    // Ignore a response a newer filter or page has already superseded (VG-16).
+    const isCurrentList = claimList();
     setIsLoading(true);
     setListError(null);
     const filters = {
@@ -154,16 +157,19 @@ export const DeviceGroupsPage = () => {
     };
     listDeviceGroups(filters, { page, size: PAGE_SIZE, sort: 'name,asc' })
       .then((res) => {
+        if (!isCurrentList()) return;
         setRows(res.content);
         setTotalPages(res.totalPages);
       })
       .catch((err: unknown) => {
+        if (!isCurrentList()) return;
         setListError(extractMessage(err) ?? t('deviceGroupsPage.errLoadList'));
       })
       .finally(() => {
+        if (!isCurrentList()) return;
         setIsLoading(false);
       });
-  }, [projectId, name, page, t]);
+  }, [projectId, name, page, t, claimList]);
 
   useEffect(() => {
     if (!scopeResolved) return;
@@ -209,6 +215,10 @@ export const DeviceGroupsPage = () => {
   }, []);
 
   const openDrawer = (id: number): void => {
+    // A slower response for a previously-opened row must not paint its data into this
+    // drawer: the rename and delete buttons act on the id, so the operator would read one
+    // record and edit another (VG-16).
+    const isCurrentDrawer = claimDrawer();
     setDrawerId(id);
     setDrawerData(null);
     setEditName(null);
@@ -218,15 +228,18 @@ export const DeviceGroupsPage = () => {
     setDrawerLoading(true);
     refreshDrawer(id)
       .catch((err: unknown) => {
+        if (!isCurrentDrawer()) return;
         notify.error(extractMessage(err) ?? t('deviceGroupsPage.errLoadGroup'));
         setDrawerId(null);
       })
       .finally(() => {
+        if (!isCurrentDrawer()) return;
         setDrawerLoading(false);
       });
   };
 
   const closeDrawer = (): void => {
+    claimDrawer();   // retire an in-flight load so it cannot reopen this drawer
     setDrawerId(null);
     setDrawerData(null);
     setEditName(null);
@@ -413,11 +426,8 @@ export const DeviceGroupsPage = () => {
   );
 
   if (!scopeResolved) {
-    return (
-      <div className="oa-settings-page">
-        <Spinner size="lg" label={t('operatorScope.loading')} />
-      </div>
-    );
+    // A spinner while it is loading, an error with a retry once /api/me has given up (VG-12).
+    return <OperatorScopeFallback failed={scopeFailed} onRetry={retryScope} />;
   }
 
   if (noProjects) {

@@ -119,3 +119,4 @@ export type {
   DiagnosticsActionStatus,
   DiagnosticsEvent,
 } from './useDiagnostics';
+export { useLatestRequest } from './useLatestRequest';

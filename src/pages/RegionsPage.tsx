@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLatestRequest } from '@hooks';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import {
@@ -13,9 +14,7 @@ import {
   RoleGate,
   SearchInput,
   Select,
-  Spinner,
-  Table,
-} from '@components';
+  Table, OperatorScopeFallback } from '@components';
 import {
   createRegion,
   deleteRegion,
@@ -68,7 +67,7 @@ export const RegionsPage = () => {
   const canMutate = role === 'admin' || role === 'operator';
   const canDelete = role === 'admin';
 
-  const { isOperator, projectIds, scopeResolved } = useAssignedProjects();
+  const { isOperator, projectIds, scopeResolved, scopeFailed, retryScope } = useAssignedProjects();
   const noProjects = isOperator && projectIds.length === 0;
 
   const [projects, setProjects] = useState<readonly ProjectSummary[]>([]);
@@ -83,6 +82,8 @@ export const RegionsPage = () => {
   const [listError, setListError] = useState<string | null>(null);
 
   const [drawerId, setDrawerId] = useState<number | null>(null);
+  const claimDrawer = useLatestRequest();
+  const claimList = useLatestRequest();
   const [drawerData, setDrawerData] = useState<RegionDetail | null>(null);
   const [drawerLoading, setDrawerLoading] = useState<boolean>(false);
 
@@ -143,6 +144,8 @@ export const RegionsPage = () => {
   }, [isOperator, visibleProjects, projectId]);
 
   const load = useCallback(() => {
+    // Ignore a response a newer filter or page has already superseded (VG-16).
+    const isCurrentList = claimList();
     setIsLoading(true);
     setListError(null);
     const filters = {
@@ -151,16 +154,19 @@ export const RegionsPage = () => {
     };
     listRegions(filters, { page, size: PAGE_SIZE, sort: 'name,asc' })
       .then((res) => {
+        if (!isCurrentList()) return;
         setRows(res.content);
         setTotalPages(res.totalPages);
       })
       .catch((err: unknown) => {
+        if (!isCurrentList()) return;
         setListError(extractMessage(err) ?? t('regionsPage.errLoadList'));
       })
       .finally(() => {
+        if (!isCurrentList()) return;
         setIsLoading(false);
       });
-  }, [projectId, name, page, t]);
+  }, [projectId, name, page, t, claimList]);
 
   useEffect(() => {
     // Hold the list call until operator scope resolves, and skip it entirely
@@ -190,6 +196,10 @@ export const RegionsPage = () => {
   );
 
   const openDrawer = (id: number): void => {
+    // A slower response for a previously-opened row must not paint its data into this
+    // drawer: the rename and delete buttons act on the id, so the operator would read one
+    // record and edit another (VG-16).
+    const isCurrentDrawer = claimDrawer();
     setDrawerId(id);
     setDrawerData(null);
     setEditing(null);
@@ -198,18 +208,22 @@ export const RegionsPage = () => {
     setDrawerLoading(true);
     getRegion(id)
       .then((d) => {
+        if (!isCurrentDrawer()) return;
         setDrawerData(d);
       })
       .catch((err: unknown) => {
+        if (!isCurrentDrawer()) return;
         notify.error(extractMessage(err) ?? t('regionsPage.errLoadOne'));
         setDrawerId(null);
       })
       .finally(() => {
+        if (!isCurrentDrawer()) return;
         setDrawerLoading(false);
       });
   };
 
   const closeDrawer = (): void => {
+    claimDrawer();   // retire an in-flight load so it cannot reopen this drawer
     setDrawerId(null);
     setDrawerData(null);
     setEditing(null);
@@ -321,11 +335,8 @@ export const RegionsPage = () => {
   // Hold the operator's render until /api/me lands — avoids an unfiltered
   // flash before assignedProjectIds is known. Admins/viewers resolve instantly.
   if (!scopeResolved) {
-    return (
-      <div className="oa-settings-page">
-        <Spinner size="lg" label={t('operatorScope.loading')} />
-      </div>
-    );
+    // A spinner while it is loading, an error with a retry once /api/me has given up (VG-12).
+    return <OperatorScopeFallback failed={scopeFailed} onRetry={retryScope} />;
   }
 
   if (noProjects) {

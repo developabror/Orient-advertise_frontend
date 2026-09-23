@@ -12,9 +12,20 @@ interface Props {
   readonly children: ReactNode;
 }
 
+/**
+ * Backoff between `/api/me` attempts. Two retries then give up: long enough to ride out a blip,
+ * short enough that an operator is not staring at a spinner wondering whether it is stuck.
+ */
+const PROFILE_RETRY_DELAYS_MS = [1_000, 3_000] as const;
+
 export const AuthProvider = ({ children }: Props) => {
   const [user, setUser] = useState<AuthUser | null>(() => tokenToUser(tokenStore.get()));
   const [bootstrapping, setBootstrapping] = useState(true);
+  // `/api/me` failed every retry. Operator pages scope by the profile, so this is what lets them
+  // show an error with a retry instead of an endless spinner (VG-12).
+  const [profileFailed, setProfileFailed] = useState(false);
+  // Bumped by reloadProfile to re-run the fetch effect on demand.
+  const [profileAttempt, setProfileAttempt] = useState(0);
 
   // Detect server-side role changes: every refresh issues a fresh JWT, and if
   // the role flipped (e.g. admin demoted to advertiser), force re-auth instead
@@ -134,25 +145,50 @@ export const AuthProvider = ({ children }: Props) => {
   useEffect(() => {
     if (user?.profile != null || user === null) return;
     let cancelled = false;
-    void getMe()
-      .then((profile) => {
-        if (cancelled) return;
-        setUser((current) => {
-          if (current === null) return current;
-          // Defensive: ignore the response if the user changed under us.
-          if (current.sub !== profile.username) return current;
-          return { ...current, profile };
+    let timer: number | undefined;
+    let attempt = 0;
+
+    const fetchProfile = (): void => {
+      void getMe()
+        .then((profile) => {
+          if (cancelled) return;
+          setProfileFailed(false);
+          setUser((current) => {
+            if (current === null) return current;
+            // Defensive: ignore the response if the user changed under us.
+            if (current.sub !== profile.username) return current;
+            return { ...current, profile };
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          attempt += 1;
+          if (attempt < PROFILE_RETRY_DELAYS_MS.length + 1) {
+            // A transient blip (a proxy hiccup, a sleeping laptop waking) should cost a second,
+            // not a working session.
+            timer = window.setTimeout(fetchProfile, PROFILE_RETRY_DELAYS_MS[attempt - 1]);
+            return;
+          }
+          // Out of retries. Say so, because an operator page cannot scope itself without the
+          // profile and would otherwise sit on a spinner forever (VG-12). The JWT fast-path
+          // values keep working for everything that does not need the profile.
+          setProfileFailed(true);
         });
-      })
-      .catch(() => {
-        // Profile fetch failed — keep the JWT fast-path values, no
-        // profile. AuthProvider deliberately doesn't surface a toast
-        // here; /api/me failure is non-fatal for the auth flow.
-      });
+    };
+
+    setProfileFailed(false);
+    fetchProfile();
     return () => {
       cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [user]);
+  }, [user, profileAttempt]);
+
+  /** Retry the profile fetch. Bumping the attempt counter re-runs the effect above. */
+  const reloadProfile = useCallback((): void => {
+    setProfileFailed(false);
+    setProfileAttempt((n) => n + 1);
+  }, []);
 
   const login = useCallback(async (username: string, password: string): Promise<void> => {
     await loginWithCredentials(username, password);
@@ -167,10 +203,12 @@ export const AuthProvider = ({ children }: Props) => {
       user,
       isAuthenticated: user !== null,
       bootstrapping,
+      profileFailed,
+      reloadProfile,
       login,
       logout,
     }),
-    [user, bootstrapping, login, logout],
+    [user, bootstrapping, profileFailed, reloadProfile, login, logout],
   );
 
   // Hold all rendering on the bootstrap loading screen — never render Routes

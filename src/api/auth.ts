@@ -29,6 +29,14 @@ export interface AuthContextValue {
   readonly user: AuthUser | null;
   readonly isAuthenticated: boolean;
   readonly bootstrapping: boolean;
+  /**
+   * True once `/api/me` has failed every retry. Operator pages scope themselves by the profile's
+   * assigned projects, so without it they can only hold their render — and before VG-12 they held
+   * it forever, with no retry and no error, on a single failed request.
+   */
+  readonly profileFailed: boolean;
+  /** Ask for the profile again after a failure (the retry button on those pages). */
+  readonly reloadProfile: () => void;
   readonly login: (username: string, password: string) => Promise<void>;
   readonly logout: () => Promise<void>;
 }
