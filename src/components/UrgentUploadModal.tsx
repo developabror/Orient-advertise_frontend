@@ -5,10 +5,6 @@ import axios from 'axios';
 import { http } from '@api/http';
 import { extractApiMessage } from '@api';
 import { markErrorHandled } from '@api/errorDialog';
-import {
-  isWebSocketPushResult,
-  type WebSocketPushResult,
-} from '@api/resources/contentUpload';
 import { Button } from './ui/Button';
 import { Modal } from './ui/Modal';
 
@@ -23,11 +19,7 @@ type UrgentState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'rejected'; readonly error: string }
   | { readonly kind: 'uploading'; readonly filename: string; readonly progressPct: number }
-  | {
-      readonly kind: 'success';
-      readonly filename: string;
-      readonly notifiedDevices: number;
-    }
+  | { readonly kind: 'success'; readonly filename: string }
   | { readonly kind: 'failed'; readonly filename: string; readonly error: string };
 
 interface Props {
@@ -48,23 +40,22 @@ const validateFile = (file: File, t: TFunction): string | null => {
   return null;
 };
 
-// Wire shape of POST /api/content/upload?urgent=true. We only need
-// `fileId` to confirm acceptance and the typed `webSocketPush.sent`
-// counter to populate the success-copy fan-out figure.
+// Wire shape of POST /api/content/upload?urgent=true. `fileId` confirms the
+// upload was accepted, and that is all this dialog needs.
+//
+// It used to read a `webSocketPush.sent` counter and report "N devices
+// notified". That figure was always 0 and could never have been anything else:
+// the push went to every device in the fleet, carried nothing actionable, and
+// the file it announced was neither transcoded nor in any playlist. The frame
+// is gone (backend v1.0.155) and so is the claim (VG-19).
 interface UrgentResponse {
   readonly fileId: number;
-  readonly webSocketPush: WebSocketPushResult | null;
 }
 
 const isUrgentResponse = (v: unknown): v is UrgentResponse => {
   if (typeof v !== 'object' || v === null) return false;
   const r = v as Record<string, unknown>;
-  if (typeof r.fileId !== 'number' || !Number.isFinite(r.fileId)) return false;
-  // `webSocketPush` is null for urgent uploads with no eligible devices,
-  // and a fully-formed counter triple otherwise. Anything else is
-  // wire-shape drift — reject so the success-copy can't lie.
-  if (r.webSocketPush !== null && !isWebSocketPushResult(r.webSocketPush)) return false;
-  return true;
+  return typeof r.fileId === 'number' && Number.isFinite(r.fileId);
 };
 
 const formatBytes = (bytes: number): string => {
@@ -144,15 +135,7 @@ export const UrgentUploadModal = ({ isOpen, onClose, onUploadAccepted }: Props) 
         });
         return;
       }
-      // `sent` is the only fan-out figure the success copy quotes. The
-      // server treats `null` webSocketPush as "no eligible devices" —
-      // surface that as 0 rather than fabricating a non-zero count.
-      const sent = data.webSocketPush?.sent ?? 0;
-      setState({
-        kind: 'success',
-        filename: file.name,
-        notifiedDevices: sent,
-      });
+      setState({ kind: 'success', filename: file.name });
       onUploadAccepted?.(String(data.fileId));
     } catch (err: unknown) {
       if (axios.isCancel(err) || controller.signal.aborted) return;
@@ -221,7 +204,7 @@ export const UrgentUploadModal = ({ isOpen, onClose, onUploadAccepted }: Props) 
         {state.kind === 'success' ? (
           <div className="oa-urgent__success">
             <p className="oa-urgent__success-headline">
-              ✓ {t('urgentUploadModal.successHeadline', { count: state.notifiedDevices })}
+              ✓ {t('urgentUploadModal.successHeadline')}
             </p>
             <p className="oa-urgent__success-note">
               <Trans

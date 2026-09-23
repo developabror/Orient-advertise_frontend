@@ -12,31 +12,6 @@
 
 import { http } from '../http';
 
-/**
- * Per-device fan-out result for an urgent upload. Mirrors the backend
- * `WebSocketPushResult` schema verbatim — three counters that always
- * sum to the number of currently-assigned devices for the content's
- * project (or to zero on a non-urgent upload, in which case the entire
- * envelope is null).
- *
- *   - `sent` — devices that ACK'd the push frame.
- *   - `skipped` — devices the server didn't push to (e.g. UNREGISTERED,
- *     not currently subscribed to the content channel).
- *   - `failed` — devices the server tried to push to but the WS write
- *     itself errored (broken pipe, timeout, etc.).
- *
- * **This is device-delivery fan-out, NOT the operator's upload/transcoding
- * progress.** It answers "how many screens were notified", not "is my file
- * uploaded/ready". Upload progress is the axios byte-progress bar in
- * ContentUploader; transcoding readiness arrives via the `CONTENT_STATUS_CHANGE`
- * WS event / GET /api/content/{id} poll. Surface `sent` as "devices notified",
- * never as an upload percentage.
- */
-export interface WebSocketPushResult {
-  readonly sent: number;
-  readonly skipped: number;
-  readonly failed: number;
-}
 
 /**
  * Mirror of the backend `UploadResponse` envelope returned by
@@ -57,9 +32,6 @@ export interface WebSocketPushResult {
  *  - `projectId` — bound project, or `null` for orphan uploads
  *    (`projectId` omitted at upload time). Attach later via
  *    `PATCH /api/content/{id}/project`.
- *  - `webSocketPush` — fan-out counts for an urgent upload (see
- *    {@link WebSocketPushResult}). `null` for non-urgent uploads or
- *    when there were no eligible devices.
  *  - `message` — operator-facing copy explaining the post-upload
  *    state (e.g. orphan-content reminder, transcoding-in-progress
  *    notice).
@@ -70,27 +42,9 @@ export interface UploadResponse {
   readonly storageKey: string;
   readonly urgent: boolean;
   readonly projectId: number | null;
-  readonly webSocketPush: WebSocketPushResult | null;
   readonly message: string;
 }
 
-/**
- * Runtime guard for {@link WebSocketPushResult}. Use at the consumer
- * boundary before reading individual counts — the resource layer
- * itself doesn't validate the wire.
- */
-export const isWebSocketPushResult = (v: unknown): v is WebSocketPushResult => {
-  if (typeof v !== 'object' || v === null) return false;
-  const r = v as Record<string, unknown>;
-  return (
-    typeof r.sent === 'number' &&
-    Number.isFinite(r.sent) &&
-    typeof r.skipped === 'number' &&
-    Number.isFinite(r.skipped) &&
-    typeof r.failed === 'number' &&
-    Number.isFinite(r.failed)
-  );
-};
 
 /**
  * Allow-list of extensions the backend's VideoUploadValidator accepts.

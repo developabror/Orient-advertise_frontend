@@ -1,14 +1,13 @@
 const en = {
-  title: 'Urgent content upload',
+  title: 'Priority upload',
   warning:
-    'Urgent content notifies <strong>all assigned devices immediately</strong> and may interrupt the active playlist. Use this only for time-sensitive announcements — for routine content, use the upload zone on the page.',
-  dropHint: 'Drop one urgent video here, or',
+    'A priority upload goes to the <strong>front of the processing queue</strong>, so this file is ready before anything already waiting. It does <strong>not</strong> put the video on screen — add it to a playlist as usual once it is ready.',
+  dropHint: 'Drop one video here, or',
   chooseVideo: 'Choose video',
   uploadProgress: 'Upload progress',
-  successHeadline_one: '{{count}} device notified',
-  successHeadline_other: '{{count}} devices notified',
+  successHeadline: 'Sent to the front of the queue',
   successNote:
-    '<strong>{{filename}}</strong> has been queued for immediate playback. Devices will switch to it as soon as they receive the push.',
+    '<strong>{{filename}}</strong> is being processed first. Add it to a playlist to put it on screen.',
   close: 'Close',
   errorOnlyVideo: 'Only video files are accepted.',
   errorTooLargeClient: 'Files must be 50 MB or smaller.',
@@ -20,16 +19,15 @@ const en = {
 export const dict = {
   en,
   ru: {
-    title: 'Загрузка срочного контента',
+    title: 'Приоритетная загрузка',
     warning:
-      'Срочный контент <strong>немедленно уведомляет все назначенные устройства</strong> и может прервать активный плейлист. Используйте это только для срочных объявлений — для обычного контента используйте зону загрузки на странице.',
-    dropHint: 'Перетащите сюда одно срочное видео или',
+      'Приоритетная загрузка ставит файл <strong>в начало очереди обработки</strong>, поэтому он будет готов раньше остальных. Это <strong>не</strong> выводит видео на экран — как обычно, добавьте его в плейлист, когда оно будет готово.',
+    dropHint: 'Перетащите сюда одно видео или',
     chooseVideo: 'Выбрать видео',
     uploadProgress: 'Ход загрузки',
-    successHeadline_one: 'Уведомлено {{count}} устройство',
-    successHeadline_other: 'Уведомлено устройств: {{count}}',
+    successHeadline: 'Отправлено в начало очереди',
     successNote:
-      'Файл <strong>{{filename}}</strong> поставлен в очередь на немедленное воспроизведение. Устройства переключатся на него, как только получат push-уведомление.',
+      'Файл <strong>{{filename}}</strong> обрабатывается первым. Добавьте его в плейлист, чтобы вывести на экран.',
     close: 'Закрыть',
     errorOnlyVideo: 'Принимаются только видеофайлы.',
     errorTooLargeClient: 'Файлы должны быть не больше 50 MB.',
@@ -38,16 +36,15 @@ export const dict = {
     errorUploadFailed: 'Не удалось загрузить.',
   } satisfies typeof en,
   uz: {
-    title: 'Shoshilinch kontent yuklash',
+    title: 'Ustuvor yuklash',
     warning:
-      'Shoshilinch kontent <strong>barcha biriktirilgan qurilmalarni darhol xabardor qiladi</strong> va faol pleylistni uzishi mumkin. Bundan faqat vaqtga bogʻliq eʼlonlar uchun foydalaning — oddiy kontent uchun sahifadagi yuklash zonasidan foydalaning.',
-    dropHint: 'Bitta shoshilinch videoni shu yerga tashlang yoki',
+      'Ustuvor yuklash faylni <strong>qayta ishlash navbatining boshiga</strong> qoʻyadi, shuning uchun u kutayotgan boshqa fayllardan oldin tayyor boʻladi. Bu videoni ekranga <strong>chiqarmaydi</strong> — tayyor boʻlgach, odatdagidek pleylistga qoʻshing.',
+    dropHint: 'Bitta videoni shu yerga tashlang yoki',
     chooseVideo: 'Video tanlash',
     uploadProgress: 'Yuklash jarayoni',
-    successHeadline_one: '{{count}} ta qurilma xabardor qilindi',
-    successHeadline_other: '{{count}} ta qurilma xabardor qilindi',
+    successHeadline: 'Navbat boshiga yuborildi',
     successNote:
-      '<strong>{{filename}}</strong> darhol ijro etish uchun navbatga qoʻyildi. Qurilmalar push-xabarni olishi bilanoq unga oʻtadi.',
+      '<strong>{{filename}}</strong> birinchi boʻlib qayta ishlanmoqda. Ekranga chiqarish uchun uni pleylistga qoʻshing.',
     close: 'Yopish',
     errorOnlyVideo: 'Faqat video fayllar qabul qilinadi.',
     errorTooLargeClient: 'Fayllar 50 MB dan katta boʻlmasligi kerak.',

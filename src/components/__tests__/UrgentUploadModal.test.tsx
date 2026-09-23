@@ -36,7 +36,7 @@ const selectVideo = (bytes?: number): void => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(http.post).mockResolvedValue({ data: { fileId: 1, webSocketPush: null } } as never);
+  vi.mocked(http.post).mockResolvedValue({ data: { fileId: 1 } } as never);
 });
 
 afterEach(() => {
@@ -64,5 +64,31 @@ describe('UrgentUploadModal — size cap & 413 (content-1)', () => {
     expect(
       await screen.findByText(/file is too large \(server limit is 50 MB\)/i),
     ).toBeInTheDocument();
+  });
+
+  it('promises a place in the queue, not playback (VG-19)', async () => {
+    // The old copy said "N devices notified" and "queued for immediate playback". The push it
+    // counted went to the whole fleet, carried nothing actionable, and announced a file that was
+    // neither transcoded nor in any playlist — so the number was always 0 and the promise was
+    // never true. A priority upload does exactly one thing: it jumps the processing queue.
+    render(<UrgentUploadModal isOpen onClose={() => undefined} />);
+    selectVideo(1024);
+
+    expect(await screen.findByText(/front of the queue/i)).toBeInTheDocument();
+    expect(screen.getByText(/add it to a playlist/i)).toBeInTheDocument();
+    expect(screen.queryByText(/notified/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/immediate playback/i)).not.toBeInTheDocument();
+  });
+
+  it('accepts the response without the removed push counter', async () => {
+    // v1.0.155 dropped `webSocketPush` from the upload response; an upload must still succeed.
+    vi.mocked(http.post).mockResolvedValueOnce({ data: { fileId: 42 } } as never);
+    const onUploadAccepted = vi.fn();
+    render(<UrgentUploadModal isOpen onClose={() => undefined} onUploadAccepted={onUploadAccepted} />);
+
+    selectVideo(1024);
+
+    expect(await screen.findByText(/front of the queue/i)).toBeInTheDocument();
+    expect(onUploadAccepted).toHaveBeenCalledWith('42');
   });
 });

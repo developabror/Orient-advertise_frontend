@@ -190,13 +190,11 @@ export type {
 } from './resources/files';
 export {
   InvalidVideoFileError,
-  isWebSocketPushResult,
   uploadContent,
 } from './resources/contentUpload';
 export type {
   InvalidVideoFileReason,
   UploadResponse as ContentUploadResponse,
-  WebSocketPushResult,
 } from './resources/contentUpload';
 export { reportPlayback } from './resources/playback';
 export type { BatchRejection, BatchResponse, PlaybackEntry } from './resources/playback';

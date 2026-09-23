@@ -11,7 +11,6 @@ vi.mock('../../http', () => ({
 import { http } from '../../http';
 import {
   InvalidVideoFileError,
-  isWebSocketPushResult,
   uploadContent,
   type UploadResponse,
 } from '../contentUpload';
@@ -24,7 +23,6 @@ const validResponse = (over: Partial<UploadResponse> = {}): UploadResponse => ({
   storageKey: 'raw/abcd-promo.mp4',
   urgent: false,
   projectId: 7,
-  webSocketPush: null,
   message: 'Upload accepted; transcoding in progress.',
   ...over,
 });
@@ -253,33 +251,3 @@ describe('uploadContent — local validation', () => {
   });
 });
 
-describe('isWebSocketPushResult', () => {
-  it('accepts a fully-formed counter triple', () => {
-    expect(isWebSocketPushResult({ sent: 3, skipped: 1, failed: 0 })).toBe(true);
-  });
-
-  it('accepts zero counts (no eligible devices reachable)', () => {
-    expect(isWebSocketPushResult({ sent: 0, skipped: 0, failed: 0 })).toBe(true);
-  });
-
-  it('rejects null / non-objects', () => {
-    expect(isWebSocketPushResult(null)).toBe(false);
-    expect(isWebSocketPushResult(undefined)).toBe(false);
-    expect(isWebSocketPushResult(7)).toBe(false);
-    expect(isWebSocketPushResult('3')).toBe(false);
-  });
-
-  it('rejects payloads missing any of the three counters', () => {
-    expect(isWebSocketPushResult({ skipped: 1, failed: 0 })).toBe(false);
-    expect(isWebSocketPushResult({ sent: 3, failed: 0 })).toBe(false);
-    expect(isWebSocketPushResult({ sent: 3, skipped: 1 })).toBe(false);
-  });
-
-  it('rejects non-finite counters', () => {
-    expect(isWebSocketPushResult({ sent: '3', skipped: 1, failed: 0 })).toBe(false);
-    expect(isWebSocketPushResult({ sent: Number.NaN, skipped: 1, failed: 0 })).toBe(false);
-    expect(
-      isWebSocketPushResult({ sent: Number.POSITIVE_INFINITY, skipped: 1, failed: 0 }),
-    ).toBe(false);
-  });
-});

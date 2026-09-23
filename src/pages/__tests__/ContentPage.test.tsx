@@ -331,10 +331,8 @@ describe('ContentPage — a new upload reaches the grid without a reload', () =>
     expect(vi.mocked(listContent).mock.calls).toHaveLength(listCallsBefore);
   });
 
-  it('announces the urgent upload path too', async () => {
-    vi.mocked(http.post).mockResolvedValue({
-      data: { fileId: 77, webSocketPush: null },
-    } as never);
+  it('announces the priority upload path too', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { fileId: 77 } } as never);
     vi.mocked(getContentSummary).mockResolvedValue(
       stuckRow({ id: 77, name: 'urgent.mp4', status: 'UPLOADED', createdAt: minutesAgo(0) }) as never,
     );
@@ -342,7 +340,7 @@ describe('ContentPage — a new upload reaches the grid without a reload', () =>
     renderPage();
     await screen.findByText('Stuck — not processed.');
 
-    fireEvent.click(screen.getByRole('button', { name: /Urgent upload/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Priority upload/ }));
     const inputs = fileInputs();
     // The modal's input is the one that appears after the page's own.
     const urgentInput = inputs[inputs.length - 1];
