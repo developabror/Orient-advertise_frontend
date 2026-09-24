@@ -12,7 +12,8 @@ vi.mock('../wsClient', () => ({
   wsClient: { connect: vi.fn(), disconnect: vi.fn() },
 }));
 vi.mock('../http', () => ({
-  refreshAccessToken: vi.fn(() => Promise.resolve()),
+  // Bootstrap goes through refreshOnce so tabs cannot spend the same refresh token twice (VG-14).
+  refreshOnce: vi.fn(() => Promise.resolve('')),
   loginWithCredentials: vi.fn(),
   logoutServer: vi.fn(() => Promise.resolve()),
 }));

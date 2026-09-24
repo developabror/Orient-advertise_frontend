@@ -61,6 +61,10 @@ export const uz: Translation = {
     forgotPassword: 'Parolni unutdingizmi?',
     errorInvalid: 'Foydalanuvchi nomi yoki parol notoʻgʻri.',
     errorRateLimited: 'Kirish urinishlari juda koʻp. Biroz kuting va qayta urinib koʻring.',
+    errorSessionRejected:
+      'Tizimga kirdingiz, lekin brauzer sessiyani qabul qilmadi. Bu kompyuterdagi sana, vaqt va vaqt mintaqasini tekshirib, qayta urinib koʻring.',
+    clockSkewWarning:
+      'Bu kompyuter soati serverdan taxminan {{minutes}} daqiqa farq qiladi. Iloji boʻlsa tuzating — ayrim ekranlar shunga tayanadi.',
   },
   dashboard: {
     title: 'Boshqaruv paneli',

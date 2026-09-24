@@ -8,7 +8,8 @@ vi.mock('../wsClient', () => ({
   wsClient: { connect: vi.fn(), disconnect: vi.fn() },
 }));
 vi.mock('../http', () => ({
-  refreshAccessToken: vi.fn(() => Promise.resolve()),
+  // Bootstrap goes through refreshOnce so tabs cannot spend the same refresh token twice (VG-14).
+  refreshOnce: vi.fn(() => Promise.resolve('')),
   loginWithCredentials: vi.fn(),
   logoutServer: vi.fn(() => Promise.resolve()),
 }));
@@ -22,11 +23,13 @@ vi.mock('@components/BootstrapLoadingScreen', () => ({
 }));
 
 import { AuthProvider } from '../AuthProvider';
+import { refreshOnce } from '../http';
 import { getMe } from '../resources/me';
 import { tokenStore } from '../tokenStore';
 import { useAssignedProjects } from '@hooks/useAssignedProjects';
 
 const mockGetMe = vi.mocked(getMe);
+const mockRefreshOnce = vi.mocked(refreshOnce);
 
 const base64Url = (value: string): string =>
   btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -144,5 +147,29 @@ describe('AuthProvider — /api/me failure (VG-12)', () => {
     });
 
     expect(screen.getByTestId('state')).toHaveTextContent('resolved:7');
+  });
+});
+
+describe('AuthProvider — bootstrap refresh (VG-14)', () => {
+  it('restores the session through the coalescing, cross-tab-locked path', async () => {
+    mockGetMe.mockResolvedValue({ username: 'olga', role: 'OPERATOR', assignedProjectIds: [] } as never);
+
+    await renderAsOperator();
+
+    // It used to call refreshAccessToken directly, bypassing refreshOnce. The refresh token is
+    // single-use and rotated, so two tabs restoring together sent the same one twice: the winner
+    // rotated it, the loser got "refresh token reuse detected" (a WARN forwarded to Telegram) and a
+    // 401 to /login. refreshOnce coalesces per tab and holds a Web Lock across tabs.
+    expect(mockRefreshOnce).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells refreshOnce which token it already has, so a tab that lost the race adopts the winner\'s', async () => {
+    mockGetMe.mockResolvedValue({ username: 'olga', role: 'OPERATOR', assignedProjectIds: [] } as never);
+
+    await renderAsOperator();
+
+    // The argument is what lets refreshOnce answer "someone already refreshed" without spending the
+    // cookie a second time.
+    expect(mockRefreshOnce).toHaveBeenCalledWith(expect.anything());
   });
 });

@@ -63,6 +63,10 @@ export const en = {
     forgotPassword: 'Forgot password?',
     errorInvalid: 'Invalid username or password.',
     errorRateLimited: 'Too many sign-in attempts. Please wait a moment and try again.',
+    errorSessionRejected:
+      'Signed in, but this browser would not accept the session. Check that this computer\u2019s date, time and time zone are correct, then try again.',
+    clockSkewWarning:
+      "This computer's clock is about {{minutes}} minutes off the server's. Fix it if you can — some screens rely on it.",
   },
   dashboard: {
     title: 'Dashboard',

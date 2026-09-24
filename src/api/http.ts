@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { env } from './env';
+import { recordServerTime } from './clockSkew';
 import { tokenStore } from './tokenStore';
 import { broadcast } from './authChannel';
 import { notify } from './notify';
@@ -256,9 +257,16 @@ const isSessionEndingRefreshFailure = (err: unknown): boolean => {
 };
 
 http.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Every response reports the server's clock. Re-measuring on each one keeps the skew current,
+    // and it is the only reason a browser with a wrong clock can still hold a session (VG-11).
+    recordServerTime(response.headers.date);
+    return response;
+  },
   async (error: unknown) => {
     if (!axios.isAxiosError(error)) throw error;
+    // An error response carries a Date too — and a 401 is exactly when the expiry maths matters.
+    recordServerTime(error.response?.headers.date);
     // A cancelled request is not a failure — the caller unmounted or changed
     // filters. CanceledError extends AxiosError with no `response`, so without
     // this it lands in the `status === undefined` branch below and toasts

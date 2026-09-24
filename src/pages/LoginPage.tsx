@@ -5,6 +5,10 @@ import type { TFunction } from 'i18next';
 import axios from 'axios';
 import { useAuth } from '@hooks/useAuth';
 import { markErrorHandled } from '@api/errorDialog';
+import { tokenToUser } from '@api/auth';
+import { tokenStore } from '@api/tokenStore';
+import { getClockSkewMs } from '@api/clockSkew';
+import { notify } from '@api/notify';
 import { Button, FormInput } from '@components/ui';
 import { ThemeToggle } from '@components/ThemeToggle';
 import { LanguageSwitcher } from '@components/LanguageSwitcher';
@@ -17,6 +21,9 @@ import { safeRedirect } from '@/lib/safeRedirect';
 // errors collapse to the generic message so internal detail never leaks. The
 // generic/rate-limited strings are localized; the backend's verbatim message is
 // passed through untranslated (it's server-controlled, not a fixed catalog).
+/** Below this the clock is close enough that mentioning it would be noise. */
+const CLOCK_WARN_MINUTES = 5;
+
 const extractLoginError = (err: unknown, t: TFunction): string => {
   const generic = t('login.errorInvalid');
   if (!axios.isAxiosError(err)) return generic;
@@ -55,6 +62,21 @@ export const LoginPage = () => {
     setSubmitting(true);
     try {
       await login(username, password);
+      // A successful POST is not a session: the browser still has to accept the token. If this
+      // machine's clock is far enough off that the token looks expired on arrival, the form used
+      // to sit there doing nothing at all — no error, no redirect, no way for the user to know
+      // why (VG-11). Skew is measured and compensated now, so this is the last resort; say
+      // something the person can act on rather than nothing.
+      if (tokenToUser(tokenStore.get()) === null) {
+        setError(t('login.errorSessionRejected'));
+        setPassword('');
+        return;
+      }
+      const skewMinutes = Math.round(Math.abs(getClockSkewMs()) / 60_000);
+      if (skewMinutes >= CLOCK_WARN_MINUTES) {
+        // Not fatal — the session works — but the device clock drives timestamps operators read.
+        notify.warning(t('login.clockSkewWarning', { minutes: skewMinutes }));
+      }
       navigate(redirect, { replace: true });
     } catch (err) {
       // Login errors belong on the form, never in the global modal — claim it

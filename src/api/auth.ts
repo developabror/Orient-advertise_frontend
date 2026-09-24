@@ -1,4 +1,5 @@
 import { createContext } from 'react';
+import { serverNow } from './clockSkew';
 import type { MeResponse } from './resources/me';
 
 // Backend roles per OpenAPI: ADMIN, OPERATOR, VIEWER, ADVERTISER. The FE keeps
@@ -92,7 +93,10 @@ export const tokenToUser = (token: string | null): AuthUser | null => {
     const parsed = JSON.parse(decodeBase64Url(payloadSegment)) as RawJwtPayload;
     if (typeof parsed.sub !== 'string') return null;
     if (typeof parsed.exp !== 'number') return null;
-    if (parsed.exp * 1000 <= Date.now()) return null;
+    // serverNow(), not Date.now(): a browser whose clock runs fast would otherwise reject a token
+    // the server has just issued, and the user would be locked out with nothing on screen to
+    // explain it (VG-11). The server still has the final say — a 401 drives the refresh.
+    if (parsed.exp * 1000 <= serverNow()) return null;
     const role = extractRole(parsed);
     if (role === null) return null;
     // profile is populated separately by AuthProvider via /api/me — see

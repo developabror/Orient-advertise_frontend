@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AuthContext, tokenToUser, type AuthUser, type Role } from './auth';
 import { tokenStore } from './tokenStore';
 import { onBroadcast } from './authChannel';
-import { loginWithCredentials, logoutServer, refreshAccessToken } from './http';
+import { loginWithCredentials, logoutServer, refreshOnce } from './http';
 import { getMe } from './resources/me';
 import { wsClient } from './wsClient';
 import { notify } from './notify';
@@ -86,7 +86,15 @@ export const AuthProvider = ({ children }: Props) => {
     let cancelled = false;
     const bootstrap = async (): Promise<void> => {
       try {
-        await refreshAccessToken();
+        // refreshOnce, NOT refreshAccessToken (VG-14). The refresh token is single-use and rotated,
+        // so two tabs restoring at the same moment used to send the same one twice: the first
+        // rotated it, the second found nothing, and the backend logged "refresh token reuse
+        // detected" — a WARN forwarded to Telegram — and 401'd that tab to /login. refreshOnce
+        // coalesces within a tab and holds a Web Lock across tabs, and a tab that arrives after
+        // the winner simply adopts the token the winner broadcast instead of spending the cookie
+        // again. Passing the current token says "what I hold is not good enough", which is exactly
+        // true on first mount (nothing) and on a bfcache restore (possibly stale).
+        await refreshOnce(tokenStore.get());
       } catch {
         tokenStore.set(null);
       } finally {
